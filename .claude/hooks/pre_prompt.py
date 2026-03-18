@@ -31,8 +31,11 @@ def main() -> None:
 
     try:
         # ── Locate the project root relative to this hook file ────────────────
-        hook_dir = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.dirname(hook_dir)   # .claude/ → promptforge/
+        # __file__ lives at  <project>/.claude/hooks/pre_prompt.py
+        # so we need to go up TWO levels: hooks/ → .claude/ → promptforge/
+        hooks_dir    = os.path.dirname(os.path.abspath(__file__))
+        claude_dir   = os.path.dirname(hooks_dir)
+        project_root = os.path.dirname(claude_dir)
         sys.path.insert(0, project_root)
 
         # ── Load .env before importing any module that needs ANTHROPIC_API_KEY ─
