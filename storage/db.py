@@ -12,43 +12,72 @@ _DB_PATH = Path.home() / ".promptforge" / "history.db"
 _conn: Optional[duckdb.DuckDBPyConnection] = None
 
 
+# ── Schema helper ─────────────────────────────────────────────────────────────
+
+def _ensure_schema(conn: duckdb.DuckDBPyConnection) -> None:
+    """Create all tables if they don't exist. Works on any write connection."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS prompt_history (
+            id               VARCHAR PRIMARY KEY,
+            timestamp        TIMESTAMP,
+            original_prompt  TEXT,
+            optimized_prompt TEXT,
+            classifier_score INTEGER,
+            was_intercepted  BOOLEAN,
+            turn_number      INTEGER,
+            session_id       VARCHAR
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS stack_memory (
+            id           VARCHAR PRIMARY KEY,
+            updated_at   TIMESTAMP,
+            key          VARCHAR UNIQUE,
+            value        TEXT,
+            confidence   DOUBLE,
+            source_count INTEGER
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id   VARCHAR PRIMARY KEY,
+            started_at   TIMESTAMP,
+            last_seen_at TIMESTAMP,
+            hostname     VARCHAR,
+            pid          INTEGER
+        )
+    """)
+
+
+# ── Connection factory functions ──────────────────────────────────────────────
+
 def _get_connection() -> duckdb.DuckDBPyConnection:
+    """Return the long-lived write connection for this process (MCP server)."""
     global _conn
     if _conn is None:
         _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _conn = duckdb.connect(str(_DB_PATH))
-        _conn.execute("""
-            CREATE TABLE IF NOT EXISTS prompt_history (
-                id               VARCHAR PRIMARY KEY,
-                timestamp        TIMESTAMP,
-                original_prompt  TEXT,
-                optimized_prompt TEXT,
-                classifier_score INTEGER,
-                was_intercepted  BOOLEAN,
-                turn_number      INTEGER,
-                session_id       VARCHAR
-            )
-        """)
-        _conn.execute("""
-            CREATE TABLE IF NOT EXISTS stack_memory (
-                id           VARCHAR PRIMARY KEY,
-                updated_at   TIMESTAMP,
-                key          VARCHAR UNIQUE,
-                value        TEXT,
-                confidence   DOUBLE,
-                source_count INTEGER
-            )
-        """)
-        _conn.execute("""
-            CREATE TABLE IF NOT EXISTS sessions (
-                session_id   VARCHAR PRIMARY KEY,
-                started_at   TIMESTAMP,
-                last_seen_at TIMESTAMP,
-                hostname     VARCHAR,
-                pid          INTEGER
-            )
-        """)
+        _conn.execute("PRAGMA enable_checkpoint_on_shutdown")
+        _ensure_schema(_conn)
     return _conn
+
+
+def get_write_connection() -> duckdb.DuckDBPyConnection:
+    """Return a fresh short-lived write connection.
+
+    Caller MUST close it immediately after use.
+    Used by the hook to avoid lock conflicts with the MCP server.
+    """
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = duckdb.connect(str(_DB_PATH))
+    _ensure_schema(conn)
+    return conn
+
+
+def get_read_connection() -> duckdb.DuckDBPyConnection:
+    """Return a read-only connection. Safe to use alongside a running MCP server."""
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return duckdb.connect(str(_DB_PATH), read_only=True)
 
 
 # ── Session identity ──────────────────────────────────────────────────────────
@@ -133,17 +162,30 @@ def get_recent_history(session_id: str, limit: int = 20) -> list[dict]:
 
 
 def get_all_history(limit: int = 20, intercepted_only: bool = False) -> list[dict]:
-    """Return most recent events across all sessions."""
+    """Return most recent events across all sessions.
+
+    Uses the existing write connection if open (avoids mixed-mode conflict),
+    otherwise opens a short-lived read-only connection.
+    """
     where = "WHERE was_intercepted = TRUE" if intercepted_only else ""
-    conn = _get_connection()
-    rows = conn.execute(f"""
-        SELECT id, timestamp, original_prompt, optimized_prompt,
-               classifier_score, was_intercepted, turn_number, session_id
-        FROM prompt_history
-        {where}
-        ORDER BY timestamp DESC
-        LIMIT ?
-    """, [limit]).fetchall()
+    if _conn is not None:
+        conn = _conn
+        close_after = False
+    else:
+        conn = get_read_connection()
+        close_after = True
+    try:
+        rows = conn.execute(f"""
+            SELECT id, timestamp, original_prompt, optimized_prompt,
+                   classifier_score, was_intercepted, turn_number, session_id
+            FROM prompt_history
+            {where}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, [limit]).fetchall()
+    finally:
+        if close_after:
+            conn.close()
     cols = ["id", "timestamp", "original_prompt", "optimized_prompt",
             "classifier_score", "was_intercepted", "turn_number", "session_id"]
     return [dict(zip(cols, row)) for row in rows]
@@ -170,7 +212,6 @@ def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
     if existing:
         entry_id, existing_value, existing_confidence, source_count = existing
         if existing_value == value:
-            # Same value: compound confidence upward
             new_confidence = min(0.99, existing_confidence + 0.02)
             conn.execute("""
                 UPDATE stack_memory
@@ -178,7 +219,6 @@ def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
                 WHERE id = ?
             """, [datetime.now(timezone.utc), new_confidence, source_count + 1, entry_id])
         else:
-            # Value changed: new evidence overrides old with lower initial trust
             conn.execute("""
                 UPDATE stack_memory
                 SET updated_at = ?, value = ?, confidence = 0.6, source_count = 1
@@ -207,12 +247,25 @@ def get_stack_memory() -> dict[str, str]:
 
 
 def get_full_stack_memory() -> list[dict]:
-    """Return all entries including confidence and source_count for CLI display."""
-    conn = _get_connection()
-    rows = conn.execute("""
-        SELECT key, value, confidence, source_count, updated_at
-        FROM stack_memory
-        ORDER BY confidence DESC
-    """).fetchall()
+    """Return all entries including confidence and source_count.
+
+    Uses the existing write connection if open (avoids mixed-mode conflict),
+    otherwise opens a short-lived read-only connection.
+    """
+    if _conn is not None:
+        conn = _conn
+        close_after = False
+    else:
+        conn = get_read_connection()
+        close_after = True
+    try:
+        rows = conn.execute("""
+            SELECT key, value, confidence, source_count, updated_at
+            FROM stack_memory
+            ORDER BY confidence DESC
+        """).fetchall()
+    finally:
+        if close_after:
+            conn.close()
     cols = ["key", "value", "confidence", "source_count", "updated_at"]
     return [dict(zip(cols, row)) for row in rows]

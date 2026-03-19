@@ -65,8 +65,15 @@ def history_cmd() -> None:
         print("No history database found. Run PromptForge and send a few prompts first.")
         return
 
-    from storage.db import get_all_history
-    events = get_all_history(limit=args.limit, intercepted_only=args.intercepted_only)
+    try:
+        from storage.db import get_all_history
+        events = get_all_history(limit=args.limit, intercepted_only=args.intercepted_only)
+    except Exception as e:
+        if "lock" in str(e).lower() or "conflict" in str(e).lower():
+            print("DB is locked by the MCP server. Stop it first or wait a moment.", file=sys.stderr)
+        else:
+            print(f"Error reading history: {e}", file=sys.stderr)
+        return
 
     if not events:
         print("No prompt history found.")
@@ -92,7 +99,16 @@ def history_cmd() -> None:
 # ── promptforge-stats ─────────────────────────────────────────────────────────
 
 def stats_cmd() -> None:
-    conn = _open_db()
+    try:
+        conn = _open_db()
+    except SystemExit:
+        return
+    except Exception as e:
+        if "lock" in str(e).lower() or "conflict" in str(e).lower():
+            print("DB is locked by the MCP server. Stop it first or wait a moment.", file=sys.stderr)
+        else:
+            print(f"Error opening DB: {e}", file=sys.stderr)
+        return
     row = conn.execute("""
         SELECT
             COUNT(*)                                                 AS total,

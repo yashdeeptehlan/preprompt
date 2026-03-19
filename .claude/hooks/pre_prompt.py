@@ -10,6 +10,20 @@ Receives JSON on stdin, writes JSON to stdout.
 import sys
 import os
 import json
+import time
+
+
+# ── Retry helper for DB writes under lock contention ─────────────────────────
+
+def _save_with_retry(fn, *args, max_retries=3, delay=0.1):
+    for attempt in range(max_retries):
+        try:
+            fn(*args)
+            return
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(delay * (2 ** attempt))
 
 
 # ── Box annotation constants ──────────────────────────────────────────────────
@@ -80,6 +94,10 @@ def main() -> None:
         if _PROJECT_ROOT not in sys.path:
             sys.path.insert(0, _PROJECT_ROOT)
 
+        # Force fresh connection in hook process (avoid inheriting MCP server's lock)
+        import storage.db as _db_module
+        _db_module._conn = None
+
         # Load .env from project root
         from dotenv import load_dotenv
         load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
@@ -114,19 +132,20 @@ def main() -> None:
 
         session_id = get_or_create_session()
 
-        save_prompt_event(
-            original_prompt=prompt,
-            optimized_prompt=optimized,
-            classifier_score=score,
-            was_intercepted=was_intercepted,
-            turn_number=turn,
-            session_id=session_id,
+        _save_with_retry(
+            save_prompt_event,
+            prompt,
+            optimized,
+            score,
+            was_intercepted,
+            turn,
+            session_id,
         )
 
         # ── Update stack memory (failure must never block the hook) ───────────
         try:
             from mcp_server.extractor import update_memory_from_prompt
-            update_memory_from_prompt(prompt, history)
+            _save_with_retry(update_memory_from_prompt, prompt, history)
         except Exception as mem_err:
             print(f"[PromptForge] Memory update failed: {mem_err}", file=sys.stderr)
 
