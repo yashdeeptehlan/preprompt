@@ -5,7 +5,12 @@ from mcp.server.fastmcp import FastMCP
 from mcp_server.classifier import classify_prompt, OPTIMIZATION_THRESHOLD
 from mcp_server.optimizer import optimize
 from mcp_server.extractor import update_memory_from_prompt
-from storage.db import save_prompt_event, get_recent_history, get_or_create_session
+from storage.db import (
+    save_prompt_event,
+    get_recent_history,
+    get_or_create_session,
+    flush_pending_hook_events,
+)
 
 mcp = FastMCP("PromptForge")
 
@@ -39,6 +44,7 @@ def optimize_prompt(
       score            : int   — classifier score (0–100)
       reason           : str   — brief explanation of what changed (or why not)
     """
+    flush_pending_hook_events()
     score = classify_prompt(user_prompt, conversation_history, turn_number)
 
     if score >= OPTIMIZATION_THRESHOLD:

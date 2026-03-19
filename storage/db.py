@@ -2,6 +2,7 @@
 
 import os
 import uuid
+import json
 import socket
 import duckdb
 from datetime import datetime, timezone
@@ -164,16 +165,13 @@ def get_recent_history(session_id: str, limit: int = 20) -> list[dict]:
 def get_all_history(limit: int = 20, intercepted_only: bool = False) -> list[dict]:
     """Return most recent events across all sessions.
 
-    Uses the existing write connection if open (avoids mixed-mode conflict),
-    otherwise opens a short-lived read-only connection.
+    CLI callers run in a separate process where _conn is None — a fresh
+    read-only connection is opened and closed.  In-process callers (MCP server,
+    tests) already hold _conn so we reuse it to avoid the mixed-mode conflict.
     """
     where = "WHERE was_intercepted = TRUE" if intercepted_only else ""
-    if _conn is not None:
-        conn = _conn
-        close_after = False
-    else:
-        conn = get_read_connection()
-        close_after = True
+    owned = _conn is None
+    conn = duckdb.connect(str(_DB_PATH), read_only=True) if owned else _conn
     try:
         rows = conn.execute(f"""
             SELECT id, timestamp, original_prompt, optimized_prompt,
@@ -184,7 +182,7 @@ def get_all_history(limit: int = 20, intercepted_only: bool = False) -> list[dic
             LIMIT ?
         """, [limit]).fetchall()
     finally:
-        if close_after:
+        if owned:
             conn.close()
     cols = ["id", "timestamp", "original_prompt", "optimized_prompt",
             "classifier_score", "was_intercepted", "turn_number", "session_id"]
@@ -249,15 +247,11 @@ def get_stack_memory() -> dict[str, str]:
 def get_full_stack_memory() -> list[dict]:
     """Return all entries including confidence and source_count.
 
-    Uses the existing write connection if open (avoids mixed-mode conflict),
-    otherwise opens a short-lived read-only connection.
+    CLI callers run in a separate process where _conn is None — a fresh
+    read-only connection is opened and closed.  In-process callers reuse _conn.
     """
-    if _conn is not None:
-        conn = _conn
-        close_after = False
-    else:
-        conn = get_read_connection()
-        close_after = True
+    owned = _conn is None
+    conn = duckdb.connect(str(_DB_PATH), read_only=True) if owned else _conn
     try:
         rows = conn.execute("""
             SELECT key, value, confidence, source_count, updated_at
@@ -265,7 +259,47 @@ def get_full_stack_memory() -> list[dict]:
             ORDER BY confidence DESC
         """).fetchall()
     finally:
-        if close_after:
+        if owned:
             conn.close()
     cols = ["key", "value", "confidence", "source_count", "updated_at"]
     return [dict(zip(cols, row)) for row in rows]
+
+
+# ── Sidecar flush ──────────────────────────────────────────────────────────────
+
+def flush_pending_hook_events() -> int:
+    """Read all JSON sidecar files from ~/.promptforge/pending/, insert into
+    prompt_history, delete each file. Returns count of events flushed.
+
+    Called by the MCP server at the start of optimize_prompt() so hook events
+    are persisted without the hook ever touching the DB directly.
+    """
+    pending_dir = Path.home() / ".promptforge" / "pending"
+    if not pending_dir.exists():
+        return 0
+
+    conn = _get_connection()
+    flushed = 0
+    for sidecar_path in pending_dir.glob("*.json"):
+        try:
+            data = json.loads(sidecar_path.read_text())
+            conn.execute("""
+                INSERT OR IGNORE INTO prompt_history
+                    (id, timestamp, original_prompt, optimized_prompt,
+                     classifier_score, was_intercepted, turn_number, session_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                str(uuid.uuid4()),
+                datetime.fromtimestamp(data["timestamp"], tz=timezone.utc),
+                data["original_prompt"],
+                data["optimized_prompt"],
+                data["classifier_score"],
+                data["was_intercepted"],
+                data["turn_number"],
+                "hook-session",
+            ])
+            sidecar_path.unlink()
+            flushed += 1
+        except Exception:
+            pass
+    return flushed
