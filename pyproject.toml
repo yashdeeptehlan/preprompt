@@ -5,9 +5,24 @@ build-backend = "hatchling.build"
 [project]
 name = "promptforge"
 version = "0.1.0"
-description = "MCP server that intercepts and optimizes prompts before they reach the LLM"
+description = "MCP server that intercepts and optimizes prompts in Claude Code and Cursor"
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
+keywords = ["mcp", "llm", "prompt-engineering", "claude", "cursor", "ai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+]
+
+[project.urls]
+Homepage = "https://github.com/yashdeeptehlan/promptforge"
+Repository = "https://github.com/yashdeeptehlan/promptforge"
+Issues = "https://github.com/yashdeeptehlan/promptforge/issues"
+
 dependencies = [
     "mcp>=1.0.0",
     "anthropic>=0.40.0",
@@ -21,6 +36,10 @@ dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
     "pytest-mock>=3.12.0",
+]
+dist = [
+    "build",
+    "twine",
 ]
 
 [project.scripts]

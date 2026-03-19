@@ -1,106 +1,140 @@
 # PromptForge
 
-An MCP server that intercepts prompts inside Claude Code and Cursor, scores
-them with a fast heuristic classifier, and rewrites under-specified ones with
-an AI optimizer before they reach the LLM — transparently and in real time.
+> Your prompts, battle-tested. An MCP server that intercepts and optimizes
+> prompts in Claude Code and Cursor before they reach the LLM.
 
----
+## What it does
+
+Most prompts sent to an LLM are underspecified — they're missing context,
+output format expectations, or technical constraints that the developer has in
+their head but didn't type. PromptForge sits between your keyboard and the
+model, scores every prompt with a heuristic classifier, and rewrites the
+complex ones using Claude Haiku before the main model ever sees them. Simple
+prompts ("what is jwt") pass through untouched in under 1ms. No API cost, no
+latency, no noise.
 
 ## How it works
 
 ```
-User types prompt
-      │
-      ▼
- classifier (heuristic, no API call) ──► score < 45? ──► pass through unchanged
-                                                │
-                                           score ≥ 45
-                                                │
-                                                ▼
-                                      optimizer (Haiku API)
-                                                │
-                                                ▼
-                                        log to DuckDB
-                                                │
-                                                ▼
-                                   return best prompt to LLM
+BEFORE  write a function that handles youtube oauth token refresh
+        and manages expired credentials with error handling
+
+AFTER   Write a Python function for FastAPI that handles YouTube OAuth 2.0
+        token refresh. The function should: (1) detect expired credentials
+        by checking the expiry timestamp, (2) use the refresh token to
+        obtain a new access token via the YouTube API, (3) update and
+        persist the new credentials (consider using a database or file
+        storage), and (4) include comprehensive error handling for invalid
+        refresh tokens, network failures, and API errors with appropriate
+        logging and exception types.
 ```
 
-The classifier runs entirely in-process with no network call, so non-intercepted
-prompts add zero latency. The optimizer only fires when it's likely to help.
+When a prompt is intercepted you see this in your terminal:
 
----
+```
+╔═ PromptForge +58 ══════════════════════════════════════════╗
+║ The rewritten prompt specifies the technical               ║
+║ implementation details, clarifies the complete workflow,   ║
+║ and adds concrete error scenarios and storage              ║
+║ considerations relevant to FastAPI applications.           ║
+╠════════════════════════════════════════════════════════════╣
+║ ORIGINAL  write a function that handles youtube oauth t... ║
+║ OPTIMIZED Write a Python function for FastAPI that handles ║
+║           YouTube OAuth 2.0 token refresh. The function    ║
+║           should: (1) detect expired credentials by        ║
+║           checking the expiry timestamp...                 ║
+╚════════════════════════════════════════════════════════════╝
+```
 
-## How the classifier works
-
-Scoring is purely heuristic — no LLM involved:
-
-- **Positive signals** (add points): vague action verbs ("handle", "manage",
-  "fix", "deal with"), multi-requirement density (count of "and" / commas),
-  late conversation turns (turn 3+), code task with no output format specified.
-- **Negative signals** (subtract points): prompt under 6 words (−20),
-  starts with "what is/does/are" (−15), contains numbered steps or explicit
-  format hint (−15), conversational opener like "thanks" or "ok" (−25).
-- **Threshold**: score ≥ 45 triggers the Haiku optimizer call.
-
-To tune the threshold: edit `OPTIMIZATION_THRESHOLD` in
-`mcp_server/classifier.py` (default: 45).
-
----
-
-## Setup
+## Install
 
 ```bash
-# 1. Install
+git clone https://github.com/yashdeeptehlan/promptforge
 cd promptforge
-pip install -e ".[dev]"   # or: uv pip install -e ".[dev]"
-
-# 2. Configure
-cp .env.example .env
-# open .env and set ANTHROPIC_API_KEY
-
-# 3. Verify
-pytest                          # 16+ tests, no API calls needed
-promptforge-test-classifier     # quick sanity check on the scorer
-
-# 4. Start the MCP server
-python -m mcp_server.server
+./scripts/install.sh
 ```
 
----
-
-## Register with Claude Code
-
-`.claude/settings.json` (already in this repo) registers both the MCP server
-and the `UserPromptSubmit` hook automatically when you open the project in
-Claude Code. No extra steps needed — just restart Claude Code.
-
-If you want to register globally instead, add to `~/.claude/settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "promptforge": {
-      "command": "python",
-      "args": ["-m", "mcp_server.server"],
-      "cwd": "/absolute/path/to/promptforge",
-      "env": { "PYTHONPATH": "/absolute/path/to/promptforge" }
-    }
-  }
-}
-```
-
----
-
-## Register with Cursor
+Or manually:
 
 ```bash
+pip install -e .
+cp .env.example .env    # add your ANTHROPIC_API_KEY
+python scripts/setup_global_hook.py
 python scripts/install_cursor.py
-# ✓ PromptForge registered in ~/.cursor/mcp.json
-# ↻ Restart Cursor for changes to take effect
 ```
 
----
+## How the smart classifier works
+
+- **Pure heuristics, zero API calls** — runs on every prompt in under 1ms
+- Scores each prompt based on: ambiguity verbs, multi-requirement density,
+  turn depth, and missing output format signals
+- **Only intercepts when score ≥ 45** — simple prompts always pass through
+- Negative signals: short prompts, lookup questions (`what is`, `what does`),
+  already-structured prompts all score low and get skipped
+
+```
+SCORE  INTERCEPT  PROMPT
+   48  YES        write me a middleware that validates tokens and handles refresh
+  -35  no         what is jwt
+  -45  no         thanks
+   65  YES        refactor this to handle edge cases and manage errors properly
+  -20  no         add tests
+   70  YES        implement a rate limiter that tracks requests, manages quotas...
+```
+
+## Stack memory
+
+PromptForge learns your stack as you work. After a few sessions it knows your
+language, framework, and style preferences and injects that context into every
+optimization automatically.
+
+```
+$ promptforge-memory
+ PromptForge — learned stack memory
+──────────────────────────────────────────────────────
+  language     python           confidence: 0.92  (seen 47x)
+  framework    fastapi          confidence: 0.88  (seen 31x)
+  database     postgresql       confidence: 0.74  (seen 12x)
+```
+
+## CLI
+
+```bash
+promptforge-history          # recent prompt events across all sessions
+promptforge-stats            # optimization stats (total, intercepted, avg score)
+promptforge-memory           # learned stack context
+promptforge-test-classifier  # test classifier on sample prompts
+```
+
+## Cost
+
+PromptForge uses `claude-haiku-4-5` for optimization — the cheapest Claude
+model. Typical cost: ~$0.001 per intercepted prompt. At 20 complex prompts
+per day that's roughly **$0.60/month**. Simple prompts are never sent to the
+API.
+
+## Architecture
+
+```
+Claude Code / Cursor
+        │
+        ▼  UserPromptSubmit hook
+  pre_prompt.py
+  ├── classify_prompt()     ← pure heuristic, <1ms, no API
+  ├── [score < 45] ──────► pass through unchanged
+  └── [score ≥ 45]
+      ├── optimize()        ← Haiku API call with stack context
+      ├── write sidecar     ← ~/.promptforge/pending/<uuid>.json
+      └── return optimized prompt
+        │
+        ▼  MCP server (on next tool call)
+  flush_pending_hook_events()  ← sidecars → DuckDB
+  save_prompt_event()
+  update_memory_from_prompt()
+```
+
+The hook never holds a database connection — it writes a small JSON sidecar
+file so there's no lock conflict with the MCP server.
 
 ## MCP Tools
 
@@ -108,41 +142,6 @@ python scripts/install_cursor.py
 |------|-----------|---------|
 | `optimize_prompt` | `user_prompt`, `conversation_history`, `turn_number` | `{optimized_prompt, was_intercepted, score, reason}` |
 | `get_prompt_history` | `limit` (default 20) | list of recent prompt events for this session |
-
----
-
-## CLI Commands
-
-```
-promptforge-test-classifier     # benchmark the scorer against 6 prompts
-promptforge-history             # recent prompt log (all sessions)
-promptforge-history --limit 50 --intercepted-only
-promptforge-stats               # aggregate stats
-```
-
-Example output — `promptforge-history`:
-
-```
-TIME      SCORE  INT  ORIGINAL PROMPT
-──────────────────────────────────────────────────────────────────────────────
-2m ago       72  yes  write me a middleware that validates tokens and handl...
-5m ago       18  no   what is jwt
-```
-
-Example output — `promptforge-stats`:
-
-```
- PromptForge — optimization stats
-──────────────────────────────────────────────────
- Total prompts seen:      847
- Prompts intercepted:     312 (36.8%)
- Avg classifier score:    41.2
- Avg score (intercepted): 67.4
- Sessions tracked:        23
- DB path:                 /Users/you/.promptforge/history.db
-```
-
----
 
 ## Environment variables
 
@@ -153,11 +152,12 @@ Example output — `promptforge-stats`:
 
 Storage is always at `~/.promptforge/history.db` (created automatically).
 
----
+## Requirements
 
-## Test the hook manually
+- Python 3.11+
+- Anthropic API key (get one at [console.anthropic.com](https://console.anthropic.com))
+- Claude Code and/or Cursor
 
-```bash
-echo '{"prompt":"write me a middleware that validates tokens and handles refresh","conversation_history":[],"turn_number":3}' \
-  | python .claude/hooks/pre_prompt.py
-```
+## License
+
+MIT — see [LICENSE](LICENSE)

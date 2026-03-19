@@ -3,7 +3,7 @@
 # This file is auto-maintained. Read it fully at the start of every chat.
 
 ## Build status
-Phase 5 complete. 28/28 tests passing.
+Phase 6 complete. 28/28 tests passing.
 
 ## What PromptForge does
 MCP server that intercepts prompts in Claude Code and Cursor, scores them
@@ -43,8 +43,12 @@ cli/
                             path resolved via __file__ (CWD-independent)
 
 scripts/
-  install_cursor.py   — registers MCP in ~/.cursor/mcp.json
-  init_github.py      — git init + first commit + push instructions
+  install.sh              — one-command installer (Python check, pip, .env, hooks)
+  setup_global_hook.py    — global Claude Code MCP + UserPromptSubmit registration
+  install_cursor.py       — registers MCP in ~/.cursor/mcp.json
+  init_github.py          — git init + first commit + push instructions
+
+LICENSE                   — MIT
 
 tests/
   test_classifier.py    — 12 tests
@@ -61,6 +65,7 @@ tests/
 - get_stack_memory() -> dict[str, str] in storage/db.py
 - extract_stack_signals(prompt, history) -> dict
 - update_memory_from_prompt(prompt, history) -> None
+- flush_pending_hook_events() -> int in storage/db.py
 
 ## Completed phases
 - Phase 1: scaffold, classifier, optimizer, DuckDB, MCP server
@@ -68,9 +73,10 @@ tests/
 - Phase 3: stack memory, extractor, memory-aware optimizer
 - Phase 4: GitHub, live test, CONTEXT.md
 - Phase 5: session identity, memory consolidation, rich annotations, cross-session history
+- Phase 6: packaging, one-command install script, MIT license, distribution README
 
 ## Next phases
-- Phase 6: packaging for distribution (pip install promptforge)
+- Phase 7: PyPI publish (pip install promptforge)
 
 ## How new chats should start
 User will say "continuing from last chat" or paste this file.
