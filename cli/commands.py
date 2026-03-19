@@ -69,7 +69,8 @@ def history_cmd() -> None:
         return
 
     try:
-        from storage.db import get_all_history
+        from storage.db import get_all_history, flush_pending_hook_events
+        flush_pending_hook_events()
         events = get_all_history(limit=args.limit, intercepted_only=args.intercepted_only)
     except Exception as e:
         print(f"Error reading history: {e}", file=sys.stderr)
@@ -99,6 +100,8 @@ def history_cmd() -> None:
 # ── promptforge-stats ─────────────────────────────────────────────────────────
 
 def stats_cmd() -> None:
+    from storage.db import flush_pending_hook_events
+    flush_pending_hook_events()
     conn = _open_db()
     row = conn.execute("""
         SELECT

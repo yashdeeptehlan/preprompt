@@ -26,7 +26,7 @@ _CONVERSATIONAL = {
     "great", "sure", "alright", "yep", "nope", "gotcha",
 }
 
-OPTIMIZATION_THRESHOLD = 45
+OPTIMIZATION_THRESHOLD = 38
 
 
 def classify_prompt(prompt: str, history: list, turn: int) -> int:
@@ -84,7 +84,7 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
     and_count = lower.count(" and ")
     comma_count = lower.count(",")
     multi_hits = and_count + comma_count
-    score += min(multi_hits * 8, 25)
+    score += min(multi_hits * 12, 30)
 
     # 3. Turn depth (up to 15 pts): turns 1–2 contribute nothing; 3+ add proportionally
     if turn >= 3:
