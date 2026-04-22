@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>PromptForge | Your prompts, battle-tested.</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<style>
+  body { font-family: 'Inter', sans-serif; background-color: #0e0e0e; color: #e5e2e1; }
+  .font-headline { font-family: 'Space Grotesk', sans-serif; letter-spacing: -0.02em; }
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+  .glass-panel { backdrop-filter: blur(20px); background: rgba(28, 27, 27, 0.8); }
+  .purple-glow { filter: drop-shadow(0 0 30px rgba(124, 58, 237, 0.3)); }
+  .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .score-bar { height: 4px; border-radius: 2px; transition: width 0.6s ease; }
+  .typing-cursor::after { content: '|'; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .copy-btn:active { transform: scale(0.95); }
+  details summary::-webkit-details-marker { display: none; }
+</style>
+<script>
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "surface-lowest": "#0e0e0e",
+          "surface-low": "#1c1b1b",
+          "surface": "#201f1f",
+          "surface-high": "#2a2a2a",
+          "surface-highest": "#353534",
+          "primary": "#d2bbff",
+          "primary-container": "#7c3aed",
+          "on-primary": "#ede0ff",
+          "outline": "#4a4455",
+          "on-surface-variant": "#ccc3d8",
+        }
+      }
+    }
+  }
+</script>
+</head>
+<body class="bg-surface-lowest overflow-x-hidden">
+
+<!-- NAV -->
+<nav class="fixed top-0 w-full z-50 bg-surface-low/80 backdrop-blur-xl border-b border-outline/20">
+  <div class="flex justify-between items-center w-full px-6 py-4 max-w-7xl mx-auto">
+    <div class="flex items-center gap-2">
+      <span class="text-xl font-mono font-bold text-white tracking-tighter">⚒ PromptForge</span>
+    </div>
+    <div class="hidden md:flex items-center gap-8">
+      <a class="text-on-surface-variant hover:text-white transition-colors text-sm font-medium" href="#how-it-works">How it works</a>
+      <a class="text-on-surface-variant hover:text-white ansition-colors text-sm font-medium" href="#demo">Demo</a>
+      <a class="text-on-surface-variant hover:text-white transition-colors text-sm font-medium" href="#faq">FAQ</a>
+      <a class="text-on-surface-variant hover:text-white transition-colors text-sm font-medium" href="https://github.com/yashdeeptehlan/promptforge" target="_blank">GitHub</a>
+    </div>
+    <a href="#beta" class="bg-primary-container text-white px-5 py-2 rounded-lg font-bold text-sm hover:bg-purple-700 transition-all">
+      Join Beta
+    </a>
+  </div>
+</nav>
+
+<main class="pt-24">
+
+<!-- HERO -->
+<section class="relative px-6 py-20 lg:py-32 max-w-7xl mx-auto overflow-hidden">
+  <div class="text-center mb-16 relative z-10">
+    <div class="inline-flex items-center gap-2 bg-primary-container/10 border border-primary-container/30 text-primary text-xs font-mono px-4 py-2 rounded-full mb-8">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+      Open source · MIT licensed · Built in public
+    </div>
+    <h1 css="text-5xl lg:text-7xl font-headline font-bold text-white mb-6 leading-tight">
+      Every prompt you type,<br/><span class="text-primary">perfected.</span>
+    </h1>
+    <p class="text-on-surface-variant text-lg lg:text-xl max-w-2xl mx-auto mb-10">
+      PromptForge sits between you and your LLM. It intercepts every prompt, scores complexity in &lt;1ms, and rewrites vague requests into precise specifications — automatically, invisibly, inside Claude Code and Cursor.
+    </p>
+    <div class="flex flex-col sm:flex-row justify-center gap-4 mb-12">
+      <a href="#beta" class="bg-primary-container text-white px-8 py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-primary-container/20">
+        Join the Beta →
+      </a>
+      <a href="https://github.com/yashdeeptehlan/promptforge" target="_blank" class="bg-surface-high/50 border border-outline/30 text-white px-8 py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-surfhigh transition-all">
+        ⭐ Star on GitHub
+      </a>
+    </div>
+    <div class="flex flex-wrap justify-center gap-4 text-on-surface-variant/60 font-mono text-xs uppercase tracking-widest">
+      <span class="flex items-center gap-2 border border-outline/10 px-3 py-1 rounded-full bg-surface-low">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Claude Code
+      </span>
+      <span class="flex items-center gap-2 border border-outline/10 px-3 py-1 rounded-full bg-surface-low">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span> Cursor
+      </span>
+      <span class="flex items-center gap-2 border border-outline/10 px-3 py-1 rounded-full bg-surface-low">
+        <span class="w-1.5 h-1.5 rounded-full bg-primary-container"></span> Python 3.11+
+      </span>
+      <span class="flex items-center gap-2 border border-outline/10 px-3 py-1 rounded-full bg-surface-low">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span> ~$0.001/prompt
+      </span>
+    </div>
+  </div>
+
+  <!-- Before/After Terminal -->
+  <div class="relative max-w-4xl mx-auto">
+    <div class="absolute -inset-10 bg-primary-container/10 blur-[100px] rounded-full"></div>
+    <div class="relative bg-surface-lowest rounded-xl overflow-hidden border border-outline/20 purple-glow">
+      <div class="bg-surface-low px-4 py-3 flex items-center gap-2">
+        <div class="terminal-dot bg-red-500/70"></div>
+        <div class="terminal-dot bg-yellow-500/70"></div>
+        <div class="terminal-dot bg-green-500/70"></div>
+        <span class="ml-4 text-xs font-mono text-on-surface-variant/40">promptforge — active session</span>
+      </div>
+      <div class="p-6 md:p-8 font-mono text-sm leading-relaxed grid md:grid-cols-2 gap-8">
+        <div class="space-y-3">
+          <div class="text-on-surface-variant/40 text-xs uppercase font-bold tracking-widest">You typed</div>
+          <div class="text-red-300 bg-red-500/5 p-4 rounded border border-red-500/10 leading-relaxed">
+            write a middleware thatidates tokens and handles refresh
+          </div>
+        </div>
+        <div class="space-y-3">
+          <div class="text-primary text-xs uppercase font-bold tracking-widest">PromptForge sent</div>
+          <div class="text-green-300 bg-green-500/5 p-4 rounded border border-green-500/10 leading-relaxed">
+            Write a FastAPI middleware class that validates JWT Bearer tokens using python-jose with RS256. Extract token from Authorization header, verify signature and expiry, attach decoded payload to request.state.user, return HTTP 401 with structured error body on failure. Handle refresh by checking expiry within 5 minutes and issuing new token via /auth/refresh.
+          </div>
+        </div>
+      </div>
+      <div class="border-t border-outline/10 px-6 py-3 flex items-center gap-3 font-mono text-xs text-on-surface-variant/50">
+        <span class="text-primary-container">●</span> PromptForge +65 · FastAPI context injected from memory · 2 requirements expanded to 6
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INTERACTIVE DEMO -->
+<section class="py-24 px-6 max-w-7xl mx-auto" id="demo">
+  <div class="text-center mb-16">
+    <span class="text-primary-container font-mono text-sm font-bold tracking-widest uppercase mb-4 block">Try it live</span>
+    <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white mb-4">See PromptForge in action</h2>
+    <p class="text-on-surface-variant max-w-xl mx-auto">Type a vague prompt or click an example. Watch the classifier score it and Haiku rewrite it in real time.</p>
+  </div>
+
+  <div class="max-w-5xl mx-auto">
+    <!-- Example chips -->
+    <div class="flex flex-wrap gap-2 mb-4 justify-center">
+      <button onclick="loadExample(0)" class="example-chip text-xs font-mono px-3 py-1.5 rounded-full border border-outline/30 text-on-surface-variant hover:border-primary-container hover:text-white transition-all">fix the bug</button>
+      <button onclick="loadExample(1)" class="example-chip text-xs font-mono px-3 py-1.5 rounded-full border border-outline/30 text-on-surface-variant hover:border-primary-container hover:text-white transition-all">add error handling</button>
+      <button onclick="loadExample(2)" class="example-chip text-xs font-mono px-3 py-1.5 rounded-full border border-outline/30 text-on-surface-variant hover:border-primary-container hover:text-white transition-all">write a middleware that validates jwt and handles refresh</button>
+      <button onclick="loadExample(3)" class="example-chip text-xs font-mono px-3 py-1.5 rounded-full border border-outline/30 text-on-surface-variant hover:border-primary-container hover:text-white transition-all">handle token refresh and manage expired credentials</button>
+      <button onclick="loadExample(4)" class="example-chip text-xs font-mono px-3 py-1.5 rounded-full border border-outline/30 text-on-surface-variant hover:border-primary-container hover:text-white transition-all">refactor this</button>
+    </div>
+
+    <!-- Terminal window -->
+    <div class="bg-surface-lowest rounded-xl border border-outline/20 overflow-hidden purple-glow">
+      <div class="bg-surface-low px-4 py-3 flex items-center gap-2">
+        <div class="terminal-dot bg-red-500/70"></div>
+        <div class="terminal-dot bg-yellow-500/70"></div>
+        <div class="terminal-dot bg-green-500/70"></div>
+        <span class="ml-4 text-xs font-mono text-on-surface-variant/40">promptforge — demo</span>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-0 divide-x divide-outline/20 min-h-80">
+
+        <!-- Panel A: Input -->
+        <div class="p-5 space-y-3">
+          <div class="text-xs font-mono text-on-surface-variant/40 uppercase tracking-widest">Your prompt</div>
+          <textarea id="demo-input" class="w-full bg-surface-low border border-outline/20 rounded-lg p-3 text-sm font-mono text-white placeholder:text-on-surface-variant/30 resize-none focus:outline-none focus:border-primary-container/50 h-32" placeholder="Type a vague prompt...">write a middleware that validates jwt and handles refresh</textarea>
+          <button onclick="runDemo()" class="w-full bg-primary-container text-white py-2.5 rounded-lg font-bold text-sm hover:bg-purple-700 transition-all flex items-center justify-center gap-2">
+            ⚡ Forge it
+          </button>
+        </div>
+
+        <!-- Panel B: Classifier -->
+        <div class="p-5 space-y-3">
+          <div class="text-xs font-mono text-on-surface-variant/40 uppercase tracking-widest">Classifier analysis</div>
+          <div id="classifier-output" class="space-y-2">
+            <div class="text-xs text-on-surface-variant/40 font-mono">Click "Forge it" to analyze...</div>
+          </div>
+        </div>
+
+        <!-- Panel C: Output -->
+        <div class="p-5 space-y-3">
+          <div class="text-xs font-mono text-on-surface-variant/40 uppercase tracking-widest">Optimized prompt</div>
+          <div id="forge-output" class="text-xs font-mono text-on-surface-variant/60">Output appears here...</div>
+          <button id="copy-btn" onclick="copyOutput()" class="hidden w-full bg-surface-high border border-outline/30 text-white py-2 rounded-lg font-mono text-xs hover:bg-surface-highest transition-all copy-btn">
+            Copy optimized prompt
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Install command -->
+    <div class="mt-8 bg-surface-low rounded-xl border border-outline/20 p-5">
+      <div class="text-xs font-mono text-on-surface-variant/40 uppercase tracking-widest mb-3">Install in 3 commands</div>
+      <div class="space-y-2">
+        <div class="flex items-center justify-between bg-surface-lowest rounded-lg px-4 py-3">
+          <code class="text-sm font-mono text-green-300">git clone https://github.com/yashdeeptehlan/promptforge</code>
+          <button onclick="copyCmd(this, 'git clone https://github.com/yashdeeptehlan/promptforge')" class="text-xs text-on-surface-variant/40 hover:text-white transition-colors ml-4 copy-btn">copy</button>
+        </div>
+        <div class="flex items-center justify-between bg-surface-lowest rounded-lg px-4 py-3">
+          <code class="text-sm font-mono text-green-300">cd promptforge && ./scripts/install.sh</code>
+          <button onclick="copyCmd(this, 'cd promptforge && ./scripts/install.sh')" class="text-xs text-on-surface-variant/40 hover:text-white transition-colors ml-4 copy-btn">copy</button>
+        </div>
+        <div class="flex items-center justify-between bg-surface-lowest rounded-lg px-4 py-3">
+          <code class="text-sm font-mono text-green-300">Restart Claude Code or Cursor — done.</code>
+          <span class="text-xs text-emerald-400 ml-4">✓ active</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section class="py-24 px-6 bg-surface-lowest" id="how-it-works">
+  <div class="max-w-7xl mx-auto">
+    <div class="text-center mb-20">
+      <span class="text-primary-container font-mono text-sm font-bold tracking-widest uppercase mb-4 block">How it works</span>
+      <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white">Install once. Works everywhere.<br/>Gets smarter.</h2>
+    </div>
+    <div class="relative grid md:grid-cols-3 gap-12">
+      <div class="hidden md:block absolute top-12 left-0 w-full h-px bg-gradient-to-r from-transparent via-outline/30 to-transparent"></div>
+      <div class="flex flex-col items-center md:items-start relative z-10">
+        <div class="w-24 h-24 bg-surface-high rounded-2xl flex items-center justify-center mb-8 border border-outline/20 shadow-2xl">
+          <span class="text-3xl">🪝</span>
+        </div>
+        <h3 class="text-xl font-headline font-bold text-white mb-4">INTERCEPT</h3>
+        <p class="text-on-surface-variant text-center md:text-left">Registers as a global UserPromptSubmit hook in Claude Code and an MCP server in Cursor. Every prompt passes through before reaching the LLM.</p>
+      </div>
+      <div class="flex flex-col items-center md:items-start relative z-10">
+        <div class="w-24 h-24 bg-surface-high rounded-2xl flex items-center justify-center mb-8 border border-outline/20 shadow-2xl">
+          <span class="text-3xl">⚡</span>
+        </div>
+        <h3 class="text-xl font-headline font-bold text-white mb-4">CLASSIFY</h3>
+        <p class="text-on-surface-variant text-center md:text-left">Pure Python heuristics score every prompt 0–100 in under 1ms. No API call. Simple prompts pass through untouched. Score ≥38 triggers optimization.</p>
+      </div>
+      <div class="flex flex-col items-center md:items-start relative z-10">
+        <div class="w-24 h-24 bg-surface-high rounded-2xl flex items-center justify-center mb-8 border border-outline/20 shadow-2xl">
+          <span class="text-3xl">✨</span>
+        </div>
+        <h3 class="text-xl font-headline font-bold text-white mb-4">OPTIMIZE</h3>
+        <p class="text-on-surface-variant text-center md:text-left">Claude Haiku rewrites flagged prompts with your full stack context injected — framework, language, style preferences learned from past sessions.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STACK MEMORY -->
+<section class="py-24 px-6 max-w-7xl mx-auto grid lg:grid-cols-2 gap-16 items-center">
+  <div>
+    <span class="text-primary-container font-mono text-sm font-bold tracking-widest uppercase mb-4 block">Stack Memory</span>
+    <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white mb-6 leading-tight">It learns your stack. Permanently.</h2>
+    <p class="text-on-surface-variant text-lg mb-8">After a few sessions, PromptForge knows you use FastAPI, prefer typed code, and work with SQLite. It injects that context into every optimization — without you saying a word.</p>
+    <ul class="space-y-4 text-on-surface-variant">
+      <li class="flex items-center gap-3"><span class="text-emerald-400">✓</span> Confidence compounds with each prompt</li>
+      <li class="flex items-center gap-3"><span class="text-emerald-400">✓</span> Resets automatically when you switch stacks</li>
+      <li class="flex items-center gap-3"><span class="text-emerald-400">✓</span> Stored locally — never leaves your machine</li>
+    </ul>
+  </div>
+  <div class="bg-surface-low rounded-xl overflow-hidden border border-outline/20">
+    <div class="bg-surface-high px-4 py-2 border-b border-outline/10 font-mono text-xs text-on-surface-variant/60 flex items-center gap-2">
+      <div class="terminal-dot bg-red-500/70"></div>
+      <div class="terminal-dot bg-yellow-500/70"></div>
+      <div class="terminal-dot bg-green-500/70"></div>
+      <span class="ml-2">$ promptforge-memory</span>
+    </div>
+    <div class="p-6 font-mono text-sm">
+      <div class="text-on-surface-variant/40 mb-4">PromptForge — learned stack memory</div>
+      <div class="text-on-surface-variant/20 mb-4">──────────────────────────────────────────────</div>
+      <div class="space-y-3">
+        <div class="flex justify-between"><span class="text-on-surface-variant/60">framework</span><span class="text-white">fastapi</span><span class="text-primary">0.92</span><span class="text-on-surface-variant/40">(47x)</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant/60">language</span><span class="text-white">python</span><span class="text-primary">0.88</span><span class="text-on-surface-variant/40">(31x)</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant/60">database</span><span class="text-white">sqlite</span><span class="text-primary">0.80</span><span class="text-on-surface-variant/40">(12x)</span></div>
+        <div class="flex justify-between"><span class="text-on-surface-variant/60">style</span><span class="text-white">typed</span><span class="text-primary">0.75</span><span class="text-on-surface-variant/40">(8x)</span></div>
+      </div>
+      <div class="text-on-surface-variant/20 mt-4 mb-3">──────────────────────────────────────────────</div>
+      <div class="text-primary-container animate-pulse text-xs">Tip: more prompts = better optimization context</div>
+    </div>
+  </div>
+</section>
+
+<!-- DUMMY SESSION -->
+<section class="py-24 px-6 max-w-7xl mx-auto">
+  <div class="text-center mb-16">
+    <span class="text-primary-container font-mono text-sm font-bold tracking-widest uppercase mb-4 block">See a full session</span>
+    <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white mb-4">Watch PromptForge work across a real dev session</h2>
+    <p class="text-on-surface-variant max-w-xl mx-auto">5 turns. PromptForge intercepts only when it matters.</p>
+  </div>
+
+  <div class="max-w-3xl mx-auto">
+    <div class="bg-surface-lowest rounded-xl border border-outline/20 overflow-hidden">
+      <div class="bg-surface-low px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="terminal-dot bg-red-500/70"></div>
+          <div class="terminal-dot bg-yellow-500/70"></div>
+          <div class="terminal-dot bg-green-500/70"></div>
+          <span class="ml-4 text-xs font-mono text-on-surface-variant/40">session replay</span>
+        </div>
+        <button onclick="replaySession()" class="text-xs font-mono text-primary-container hover:text-primary transition-colors">↺ replay</button>
+      </div>
+      <div id="session-turns" class="p-6 space-y-4 font-mono text-sm min-h-64">
+        <div class="text-on-surface-variant/30 text-xs">Click replay to start...</div>
+      </div>
+      <div class="border-t border-outline/10 px-6 py-3 font-mono text-xs text-on-surface-variant/40" id="session-summary"></div>
+    </div>
+    <div class="mt-4 flex gap-3 justify-center">
+      <button onclick="replaySession()" class="bg-surface-low border border-outline/30 text-white px-6 py-2.5 rounded-lg font-mono text-sm hover:bg-surface-high transition-all">▶ Play session</button>
+    </div>
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="py-12 border-y border-outline/10 bg-surface-lowest/50">
+  <div class="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8">
+    <div class="text-center"><div class="text-3xl font-mono font-bold text-white mb-1">&lt; 1ms</div><div class="text-xs text-on-surface-variant uppercase tracking-widest">Classifier latency</div></div>
+    <div class="text-center"><div class="text-3xl font-mono font-bold text-white mb-1">~$0.001</div><div class="text-xs text-on-surface-variant uppercase tracking-widest">Per optimization</div></div>
+    <div class="text-center"><div class="text-3xl font-mono font-bold text-white mb-1">0</div><div class="text-xs text-on-surface-variant uppercase tracking-widest">Lock errors (SQLite WAL)</div></div>
+    <div class="text-center"><div class="text-3xl font-mono font-bold text-white mb-1">MIT</div><div class="text-xs text-on-surface-variant uppercase tracking-widest">License</div></div>
+  </div>
+</section>
+
+<!-- OPEN SOURCE -->
+<section class="py-24 px-6 max-w-7xl mx-auto">
+  <div class="text-center mb-16">
+    <h2 class="text-4xl lg:text-5xl font-headline font-bold text-white mb-6">Built in the open.</h2>
+    <p class="text-on-surface-variant max-w-2xl mx-auto">PromptForge is MIT licensed. The classifier, optimizer, memory layer, and IDE integrations are all open source. Come build with us.</p>
+  </div>
+  <div class="flex flex-wrap justify-center gap-4 mb-16">
+    <a href="https://github.com/yashdeeptehlan/promptforge" target="_blank" class="bg-primary-container text-white px-6 py-3 rounded-lg font-bold hover:bg-purple-700 transition-all">⭐ Star on GitHub</a>
+    <a href="https://github.com/yashdeeptehlan/promptforge/fork" target="_blank" class="bg-surface-high border border-outline/30 text-white px-6 py-3 rounded-lg font-bold hover:bg-surface-highest transition-all">🍴 Fork</a>
+    <a href="https://github.com/yashdeeptehlan/promptforge/issues" target="_blank" class="bg-surface-high border border-outline/30 text-white px-6 py-3 rounded-lg font-bold hover:bg-surface-highest transition-all">🐛 Issues</a>
+  </div>
+  <div class="grid md:grid-cols-3 gap-8">
+    <div class="p-6 bg-surface-low rounded-xl border border-outline/10 hover:border-primary-container/30 transition-all">
+      <h4 class="font-bold text-white mb-2">Improve the classifier</h4>
+      <p class="text-sm text-on-surface-variant mb-4">Tune scoring weights and signals for different languages and domains.</p>
+      <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">Help Wanted</span>
+    </div>
+    <div class="p-6 bg-surface-low rounded-xl border border-outline/10 hover:border-primary-container/30 transition-all">
+      <h4 class="font-bold text-white mb-2">Add IDE support</h4>
+      <p class="text-sm text-on-surface-variant mb-4">Windsurf, Zed, VS Code integrations — each needs a rules file and testing.</p>
+      <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">Pending</span>
+    </div>
+    <div class="p-6 bg-surface-low rounded-xl border border-outline/10 hover:border-primary-container/30 transition-all">
+      <h4 class="font-bold text-white mb-2">Build the dashboard</h4>
+      <p class="text-sm text-on-surface-variant mb-4">Real-time visualization of optimization history, cost savings, stack memory.</p>
+      <span class="text-xs font-mono text-primary bg-primary/10 px-2 py-1 rounded">RFC</span>
+    </div>
+  </div>
+</section>
+
+<!-- BETA SIGNUP -->
+<section class="px-6 py-20 max-w-5xl mx-auto" id="beta">
+  <div class="bg-gradient-to-br from-primary-container to-purple-900 rounded-3xl p-12 lg:p-20 text-center relative overflow-hidden">
+    <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle, white 1px, transparent 1px); background-size: 20px 20px;"></div>
+    <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white mb-6 relative z-10">Get early access.</h2>
+    <p class="text-purple-200 text-lg mb-10 max-w-xl mx-auto relative z-10">Free forever for open source. Shape the roadmap. Join developers already using PromptForge in their daily workflow.</p>
+    <form class="flex flex-col sm:flex-row gap-4 max-w-md mx-auto relative z-10" onsubmit="handleSignup(event)">
+      <input id="email-input" class="flex-grow bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30" placeholder="Enter your email" type="email" required/>
+      <button type="submit" class="bg-white text-primary-container px-8 py-4 rounded-xl font-bold hover:bg-purple-50 transition-all">Join Beta</button>
+    </form>
+    <div id="signup-success" class="hidden mt-4 text-emerald-300 font-mono text-sm relative z-10">✓ You're on the list. We'll be in touch.</div>
+    <div class="flex flex-wrap justify-center gap-3 mt-6 relative z-10">
+      <span class="text-xs text-purple-200 border border-white/10 px-3 py-1 rounded-full">Free beta access</span>
+      <span class="text-xs text-purple-200 border border-white/10 px-3 py-1 rounded-full">Shape the roadmap</span>
+      <span class="text-xs text-purple-200 border border-white/10 px-3 py-1 rounded-full">No spam</span>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="py-24 px-6 max-w-3xl mx-auto" id="faq">
+  <h2 class="text-3xl font-headline font-bold text-white mb-12 text-center">Frequently Asked Questions</h2>
+  <div class="space-y-4">
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        Is it free? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed">The core MCP server is 100% open source and free forever. Enterprise features — team memory, audit logs, hosted dashboard — will be paid.</div>
+    </details>
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        Does it send my prompts anywhere? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed">No. Everything runs locally. The only external call is to Anthropic's API for optimization — the same call your IDE makes anyway. Your data never leaves your machine.</div>
+    </details>
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        Which IDEs are supported? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed">Claude Code and Cursor work fully automatically. Any MCP-compatible IDE (Windsurf, Zed) works with manual setup. More coming in Phase 7.</div>
+    </details>
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        How much does the API cost? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed">~$0.001 per optimized prompt. Most prompts are never sent — the classifier skips simple ones. Typical usage: $1–3/month.</div>
+    </details>
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        Will it slow down my workflow? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed">No. The classifier runs in under 1ms locally using pure Python heuristics. The API call adds ~1–2 seconds on complex prompts only — less time than you'd spend rewriting.</div>
+    </details>
+    <details class="group bg-surface-low border border-outline/10 rounded-xl overflow-hidden">
+      <summary class="p-6 text-white font-bold cursor-pointer flex justify-between items-center list-none">
+        How do I install it? <span class="group-open:rotate-180 transition-transform text-lg">▾</span>
+      </summary>
+      <div class="px-6 pb-6 text-on-surface-variant leading-relaxed font-mono text-sm">
+        git clone https://github.com/yashdeeptehlan/promptforge<br/>
+        cd promptforge && ./scripts/install.sh<br/>
+        <span class="text-emerald-400"># Restart Claude Code or Cursor — done.</span>
+      </div>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer class="bg-surface-lowest border-t border-outline/15">
+  <div class="flex flex-col md:flex-row justify-between items-center w-full px-8 py-12 max-w-7xl mx-auto">
+    <div class="flex flex-col items-center md:items-start mb-8 md:mb-0">
+      <span class="text-lg font-mono font-bold text-white mb-2">⚒ PromptForge</span>
+      <p class="text-on-surface-variant text-sm">© 2026 Yashdeep Tehlan. MIT License.</p>
+      <p class="text-on-surface-variant/40 text-xs mt-1">Not affiliated with Anthropic.</p>
+    </div>
+    <div class="flex gap-8">
+      <a class="text-on-surface-variant hover:text-primary-container transition-colors font-mono text-sm" href="https://github.com/yashdeeptehlan/promptforge" target="_blank">GitHub</a>
+      <a class="text-on-surface-variant hover:text-primary-container transition-colors font-mono text-sm" href="#">Docs</a>
+      <a class="text-on-surface-variant hover:text-primary-container transition-colors font-mono text-sm" href="#">Twitter</a>
+      <a class="text-on-surface-variant hover:text-primary-container transition-colors font-mono text-sm" href="mailto:tech@thedare.io">Email</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+const EXAMPLES = [
+  {
+    prompt: "fix the bug",
+    score: 12,
+    intercepted: false,
+    signals: [
+      { label: "Ambiguity markers", pts: 0, max: 25 },
+      { label: "Multi-requirement", pts: 0, max: 30 },
+      { label: "Code task", pts: 0, max: 15 },
+      { label: "Short prompt penalty", pts: -20, max: 20 },
+      { label: "Conversational opener", pts: 0, max: 25 },
+    ],
+    optimized: null
+  },
+  {
+    prompt: "add error handling",
+    score: 18,
+    intercepted: false,
+    signals: [
+      { label: "Ambiguity markers", pts: 10, max: 25 },
+      { label: "Multi-requirement", pts: 0, max: 30 },
+      { label: "Code task detected", pts: 15, max: 15 },
+      { label: "Short prompt penalty", pts: -7, max: 20 },
+    ],
+    optimized: null
+  },
+  {
+    prompt: "write a middleware that validates jwt and handles refresh",
+    score: 65,
+    intercepted: true,
+    signals: [
+      { label: "Ambiguity markers (handles)", pts: 25, max: 25 },
+      { label: "Multi-requirement (and)", pts: 24, max: 30 },
+      { label: "Code task detected", pts: 15, max: 15 },
+      { label: "Turn depth bonus", pts: 8, max: 15 },
+      { label: "No format specified", pts: 15, max: 15 },
+    ],
+    optimized: "Write a FastAPI middleware class that validates JWT Bearer tokens using python-jose with RS256. Extract token from the Authorization header, verify signature and expiry, attach decoded payload to request.state.user, and return HTTP 401 with a structured error body on any validation failure. Handle refresh by checking expiry within 5 minutes and issuing a new token via /auth/refresh."
+  },
+  {
+    prompt: "handle token refresh and manage expired credentials with proper error handling",
+    score: 58,
+    intercepted: true,
+    signals: [
+      { label: "Ambiguity markers (handle, manage)", pts: 25, max: 25 },
+      { label: "Multi-requirement density", pts: 18, max: 30 },
+      { label: "Code task detected", pts: 15, max: 15 },
+      { label: "No format specified", pts: 15, max: 15 },
+      { label: "Short prompt penalty", pts: -15, max: 20 },
+    ],
+    optimized: "Write a Python function for FastAPI that refreshes YouTube OAuth2 tokens using the google-auth library. Detect expired credentials, automatically refresh using the refresh token, cache the new access token, and handle errors including invalid refresh tokens, network failures, and quota exceeded scenarios. Return the valid access token or raise a custom exception with the failure reason."
+  },
+  {
+    prompt: "refactor this",
+    score: 22,
+    intercepted: false,
+    signals: [
+      { label: "Ambiguity markers (refactor)", pts: 25, max: 25 },
+      { label: "Multi-requirement", pts: 0, max: 30 },
+      { label: "Short prompt penalty", pts: -20, max: 20 },
+      { label: "No task context", pts: 0, max: 15 },
+    ],
+    optimized: null
+  }
+];
+
+let currentExample = EXAMPLES[2];
+
+function loadExample(idx) {
+  currentExample = EXAMPLES[idx];
+  document.getElementById('demo-input').value = currentExample.prompt;
+  document.getElementById('classifier-output').innerHTML = '<div class="text-xs text-on-surface-variant/40 font-mono">Click "Forge it" to analyze...</div>';
+  document.getElementById('forge-output').textContent = 'Output appears here...';
+  document.getElementById('forge-output').className = 'text-xs font-mono text-on-surface-variant/60';
+  document.getElementById('copy-btn').classList.add('hidden');
+}
+
+function runDemo() {
+  const prompt = document.getElementById('demo-input').value.trim();
+  if (!prompt) return;
+
+  const match = EXAMPLES.find(e => e.prompt === prompt) || currentExample;
+
+  const classEl = document.getElementById('classifier-output');
+  classEl.innerHTML = '<div class="text-xs font-mono text-primary animate-pulse">Analyzing prompt...</div>';
+
+  setTimeout(() => {
+    let html = '';
+    match.signals.forEach((s, i) => {
+      const isNeg = s.pts < 0;
+      const pct = Math.abs(s.pts) / s.max * 100;
+      html += `<div class="space-y-1 opacity-0 signal-row" style="animation: fadeIn 0.3s ease ${i * 0.12}s forwards">
+        <div class="flex justify-between text-xs">
+          <span class="text-on-surface-variant/60">${s.label}</span>
+          <span class="${isNeg ? 'text-red-400' : 'text-emerald-400'} font-mono">${isNeg ? '' : '+'}${s.pts}</span>
+        </div>
+        <div class="h-1 bg-surface-highest rounded-full overflow-hidden">
+          <div class="h-full rounded-full ${isNeg ? 'bg-red-500/50' : 'bg-primary-container'}" style="width:0%;transition:width 0.5s ease ${i*0.12+0.2}s" data-width="${pct}"></div>
+        </div>
+      </div>`;
+    });
+
+    const verdict = match.intercepted
+      ? `<div class="mt-3 pt-3 border-t border-outline/20 font-mono text-xs"><span class="text-white font-bold">Total: ${match.score}</span> <span class="text-primary-container ml-2">✓ INTERCEPTED</span></div>`
+      : `<div class="mt-3 pt-3 border-t border-outline/20 font-mono text-xs"><span class="text-white font-bold">Total: ${match.score}</span> <span class="text-on-surface-variant/40 ml-2">below threshold — passed through</span></div>`;
+
+    classEl.innerHTML = html + verdict;
+
+    document.querySelectorAll('[data-width]').forEach(el => {
+      setTimeout(() => { el.style.width = el.dataset.width + '%'; }, 50);
+    });
+
+    setTimeout(() => {
+      const outEl = document.getElementById('forge-output');
+      const copyBtn = document.getElementById('copy-btn');
+
+      if (match.intercepted && match.optimized) {
+        outEl.className = 'text-xs font-mono text-green-300 leading-relaxed';
+        typeText(outEl, match.optimized, 15);
+        copyBtn.classList.remove('hidden');
+      } else {
+        outEl.className = 'text-xs font-mono text-on-surface-variant/40';
+        outEl.textContent = `── score ${match.score} · below threshold 38 · passed through unchanged ──`;
+        copyBtn.classList.add('hidden');
+      }
+    }, match.signals.length * 120 + 400);
+
+  }, 600);
+}
+
+function typeText(el, text, speed) {
+  el.textContent = '';
+  let i = 0;
+  const timer = setInterval(() => {
+    el.textContent += text[i];
+    i++;
+    if (i >= text.length) clearInterval(timer);
+  }, speed);
+}
+
+function copyOutput() {
+  const text = document.getElementById('forge-output').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = 'Copy optimized prompt'; }, 2000);
+  });
+}
+
+function copyCmd(btn, text) {
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = 'copy'; }, 2000);
+  });
+}
+
+const SESSION_TURNS = [
+  { prompt: "what is jwt", score: -5, intercepted: false },
+  { prompt: "cool, building a fastapi app", score: 8, intercepted: false },
+  { prompt: "write a middleware that validates tokens and handles refresh", score: 65, intercepted: true, optimized: "Write a FastAPI middleware class `JWTAuthMiddleware` that validates JWT Bearer tokens using python-jose RS256, raises HTTP 401 on failure, and silently refreshes tokens expiring within 5 minutes via /auth/refresh." },
+  { prompt: "no that's wrong, try again — handle expired tokens differently", score: 72, intercepted: true, optimized: "Update JWTAuthMiddleware to distinguish between expired tokens (HTTP 401 with error: token_expired) and invalid tokens (HTTP 401 with error: token_invalid). For expired tokens only, attempt silent refresh before rejecting." },
+  { prompt: "thanks", score: -45, intercepted: false },
+];
+
+let sessionTimer = null;
+function replaySession() {
+  const container = document.getElementById('session-turns');
+  const summary = document.getElementById('session-summary');
+  container.innerHTML = '';
+  summary.textContent = '';
+  if (sessionTimer) clearTimeout(sessionTimer);
+
+  let intercepted = 0;
+  SESSION_TURNS.forEach((turn, i) => {
+    if (turn.intercepted) intercepted++;
+    setTimeout(() => {
+      const div = document.createElement('div');
+      div.className = 'space-y-2 opacity-0 transition-opacity duration-300';
+      div.innerHTML = `
+        <div class="flex items-start gap-3">
+          <span class="text-on-surface-variant/30 text-xs mt-0.5">Turn ${i+1}</span>
+          <div class="flex-1">
+            <div class="text-on-surface-variant/70 text-xs mb-1">${turn.prompt}</div>
+            ${turn.intercepted
+              ? `<div class="text-primary-container text-xs">⚡ PromptForge +${turn.score} · intercepted</div>
+                 <div class="text-green-300/70 text-xs mt-1 pl-2 border-l border-primary-container/30">${turn.optimized}</div>`
+              : `<div class="text-on-surface-variant/30 text-xs">── score ${turn.score} · passed through ──</div>`
+            }
+          </div>
+        </div>`;
+      container.appendChild(div);
+      setTimeout(() => { div.style.opacity = '1'; }, 50);
+
+      if (i === SESSION_TURNS.length - 1) {
+        setTimeout(() => {
+          summary.textContent = `PromptForge intercepted ${intercepted} of ${SESSION_TURNS.length} prompts — exactly when it mattered.`;
+        }, 300);
+      }
+    }, i * 900);
+  });
+}
+
+function handleSignup(e) {
+  e.preventDefault();
+  const email = document.getElementById('email-input').value;
+  document.getElementById('signup-success').classList.remove('hidden');
+  document.getElementById('email-input').value = '';
+}
+
+const style = document.createElement('style');
+style.textContent = `@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }`;
+document.head.appendChild(style);
+</script>
+</body>
+</html>
