@@ -1,4 +1,4 @@
-"""SQLite storage for PromptForge — persists to ~/.promptforge/history.db."""
+"""SQLite storage for PrePrompt — persists to ~/.preprompt/history.db."""
 
 import os
 import uuid
@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-_DB_PATH = Path.home() / ".promptforge" / "history.db"
+_DB_PATH = Path.home() / ".preprompt" / "history.db"
 _conn: Optional[sqlite3.Connection] = None
 
 
@@ -284,13 +284,13 @@ def get_full_stack_memory() -> list[dict]:
 # ── Sidecar flush ──────────────────────────────────────────────────────────────
 
 def flush_pending_hook_events() -> int:
-    """Read all JSON sidecar files from ~/.promptforge/pending/, insert into
+    """Read all JSON sidecar files from ~/.preprompt/pending/, insert into
     prompt_history, delete each file. Returns count of events flushed.
 
     Called by the MCP server at the start of optimize_prompt() so hook events
     are persisted without the hook ever touching the DB directly.
     """
-    pending_dir = Path.home() / ".promptforge" / "pending"
+    pending_dir = Path.home() / ".preprompt" / "pending"
     if not pending_dir.exists():
         return 0
 

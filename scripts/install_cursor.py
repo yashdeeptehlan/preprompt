@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-One-time setup: register PromptForge in Cursor's MCP config.
-Safe to run multiple times — upserts the "promptforge" entry.
+One-time setup: register PrePrompt in Cursor's MCP config.
+Safe to run multiple times — upserts the "preprompt" entry.
 
 Usage:
     python scripts/install_cursor.py
@@ -39,8 +39,8 @@ def main() -> None:
     if "mcpServers" not in config:
         config["mcpServers"] = {}
 
-    # ── Upsert the promptforge entry ──────────────────────────────────────────
-    config["mcpServers"]["promptforge"] = {
+    # ── Upsert the preprompt entry ────────────────────────────────────────────
+    config["mcpServers"]["preprompt"] = {
         "command": "python",
         "args": ["-m", "mcp_server.server"],
         "cwd": str(repo_root),
@@ -54,7 +54,7 @@ def main() -> None:
         json.dump(config, f, indent=2)
         f.write("\n")
 
-    print("✓ PromptForge registered in ~/.cursor/mcp.json")
+    print("✓ PrePrompt registered in ~/.cursor/mcp.json")
     print("↻ Restart Cursor for changes to take effect")
     if not api_key:
         print("⚠ ANTHROPIC_API_KEY not found in .env — add it before restarting")

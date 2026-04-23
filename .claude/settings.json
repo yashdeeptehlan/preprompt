@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "promptforge": {
+    "preprompt": {
       "command": "python",
       "args": ["-m", "mcp_server.server"],
       "cwd": "${workspaceFolder}/promptforge",

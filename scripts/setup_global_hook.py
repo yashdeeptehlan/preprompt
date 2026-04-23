@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Register PromptForge as a global Claude Code MCP server + UserPromptSubmit hook.
+Register PrePrompt as a global Claude Code MCP server + UserPromptSubmit hook.
 
 Safe to run multiple times — always overwrites, never duplicates.
 """
@@ -44,7 +44,7 @@ def main() -> None:
 
     # ── MCP server entry ──────────────────────────────────────────────────────
     settings.setdefault("mcpServers", {})
-    settings["mcpServers"]["promptforge"] = {
+    settings["mcpServers"]["preprompt"] = {
         "command": "python",
         "args": ["-m", "mcp_server.server"],
         "cwd": str(_PROJECT_ROOT),
@@ -74,15 +74,15 @@ def main() -> None:
     # ── Cursor global rules ───────────────────────────────────────────────────
     cursor_rules_dir = Path.home() / ".cursor" / "rules"
     cursor_rules_dir.mkdir(parents=True, exist_ok=True)
-    cursor_rules_file = cursor_rules_dir / "promptforge.mdc"
+    cursor_rules_file = cursor_rules_dir / "preprompt.mdc"
     cursor_rules_file.write_text("""---
 alwaysApply: true
 ---
 
-# PromptForge — always optimize first
+# PrePrompt — always optimize first
 
 Before responding to ANY user request, you MUST call the optimize_prompt
-tool from the promptforge MCP server. Call it with these exact parameters:
+tool from the preprompt MCP server. Call it with these exact parameters:
 
 {
   "user_prompt": "<copy the user's exact message here as a string>",
@@ -99,7 +99,7 @@ If the tool fails, proceed with the original prompt silently.
     print("  Restart Cursor to activate")
 
     # ── Migrate old DuckDB file if present ───────────────────────────────────
-    old_db = Path.home() / ".promptforge" / "history.db"
+    old_db = Path.home() / ".preprompt" / "history.db"
     if old_db.exists():
         try:
             # Quick check: SQLite files start with "SQLite format 3"

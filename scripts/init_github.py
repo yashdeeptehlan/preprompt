@@ -38,7 +38,7 @@ def main() -> None:
 
     # ── git commit ────────────────────────────────────────────────────────────
     result = _run(
-        ["git", "commit", "-m", "feat: PromptForge v0.1 — MCP prompt optimizer"],
+        ["git", "commit", "-m", "feat: PrePrompt v0.1 — MCP prompt optimizer"],
         repo_root,
     )
     if result.returncode != 0:
@@ -52,11 +52,11 @@ def main() -> None:
     print()
     print("Next steps to push to GitHub:")
     print("  1. Create a new repo at https://github.com/new")
-    print("     Name: promptforge")
+    print("     Name: preprompt")
     print("     Description: MCP server that intercepts and optimizes prompts in Claude Code + Cursor")
     print("     Visibility: Public (recommended — open source moat)")
     print("  2. Run:")
-    print("     git remote add origin https://github.com/YOUR_USERNAME/promptforge.git")
+    print("     git remote add origin https://github.com/YOUR_USERNAME/preprompt.git")
     print("     git branch -M main")
     print("     git push -u origin main")
     print()

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "promptforge"
+name = "preprompt"
 version = "0.1.0"
 description = "MCP server that intercepts and optimizes prompts in Claude Code and Cursor"
 readme = "README.md"
@@ -25,9 +25,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yashdeeptehlan/promptforge"
-Repository = "https://github.com/yashdeeptehlan/promptforge"
-Issues = "https://github.com/yashdeeptehlan/promptforge/issues"
+Homepage = "https://github.com/yashdeeptehlan/preprompt"
+Repository = "https://github.com/yashdeeptehlan/preprompt"
+Issues = "https://github.com/yashdeeptehlan/preprompt/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -41,12 +41,12 @@ dist = [
 ]
 
 [project.scripts]
-promptforge                  = "mcp_server.server:main"
-promptforge-history          = "cli.commands:history_cmd"
-promptforge-stats            = "cli.commands:stats_cmd"
-promptforge-test-classifier  = "cli.commands:test_classifier_cmd"
-promptforge-memory           = "cli.commands:memory_cmd"
-promptforge-update-context   = "cli.commands:update_context_cmd"
+preprompt                    = "mcp_server.server:main"
+preprompt-history            = "cli.commands:history_cmd"
+preprompt-stats              = "cli.commands:stats_cmd"
+preprompt-test-classifier    = "cli.commands:test_classifier_cmd"
+preprompt-memory             = "cli.commands:memory_cmd"
+preprompt-update-context     = "cli.commands:update_context_cmd"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mcp_server", "storage", "cli"]

@@ -1,12 +1,12 @@
 """
-CLI entry points for PromptForge.
+CLI entry points for PrePrompt.
 
 Commands
 --------
-promptforge-history          View recent prompt history (all sessions)
-promptforge-stats            Aggregate optimization stats
-promptforge-test-classifier  Run the classifier against 6 benchmark prompts
-promptforge-memory           Show learned stack memory
+preprompt-history            View recent prompt history (all sessions)
+preprompt-stats              Aggregate optimization stats
+preprompt-test-classifier    Run the classifier against 6 benchmark prompts
+preprompt-memory             Show learned stack memory
 """
 
 import argparse
@@ -15,7 +15,7 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-_DB_PATH = Path.home() / ".promptforge" / "history.db"
+_DB_PATH = Path.home() / ".preprompt" / "history.db"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -45,18 +45,18 @@ def _truncate(text: str, width: int) -> str:
 def _open_db() -> sqlite3.Connection:
     if not _DB_PATH.exists():
         print(f"No history database found at {_DB_PATH}", file=sys.stderr)
-        print("Run PromptForge and send a few prompts first.", file=sys.stderr)
+        print("Run PrePrompt and send a few prompts first.", file=sys.stderr)
         sys.exit(1)
     from storage.db import get_read_connection
     return get_read_connection()
 
 
-# ── promptforge-history ───────────────────────────────────────────────────────
+# ── preprompt-history ────────────────────────────────────────────────────────
 
 def history_cmd() -> None:
     parser = argparse.ArgumentParser(
-        prog="promptforge-history",
-        description="Show recent prompts seen by PromptForge (all sessions).",
+        prog="preprompt-history",
+        description="Show recent prompts seen by PrePrompt (all sessions).",
     )
     parser.add_argument("--limit", type=int, default=20, metavar="N",
                         help="Maximum rows to display (default: 20)")
@@ -65,7 +65,7 @@ def history_cmd() -> None:
     args = parser.parse_args()
 
     if not _DB_PATH.exists():
-        print("No history database found. Run PromptForge and send a few prompts first.")
+        print("No history database found. Run PrePrompt and send a few prompts first.")
         return
 
     try:
@@ -97,7 +97,7 @@ def history_cmd() -> None:
         print(f"{time_str:<{col_time}}  {e['classifier_score']:>{col_score}}  {int_str:<{col_int}}  {prompt_str}")
 
 
-# ── promptforge-stats ─────────────────────────────────────────────────────────
+# ── preprompt-stats ──────────────────────────────────────────────────────────
 
 def stats_cmd() -> None:
     from storage.db import flush_pending_hook_events
@@ -122,7 +122,7 @@ def stats_cmd() -> None:
     pct = (intercepted / total * 100) if total else 0.0
 
     sep = "─" * 46
-    print(f" PromptForge — optimization stats")
+    print(f" PrePrompt — optimization stats")
     print(sep)
     print(f" Total prompts seen:      {total}")
     print(f" Prompts intercepted:     {intercepted} ({pct:.1f}%)")
@@ -132,7 +132,7 @@ def stats_cmd() -> None:
     print(f" DB path:                 {_DB_PATH}")
 
 
-# ── promptforge-test-classifier ───────────────────────────────────────────────
+# ── preprompt-test-classifier ────────────────────────────────────────────────
 
 _BENCHMARK_PROMPTS = [
     "write me a middleware that validates tokens and handles refresh",
@@ -169,7 +169,7 @@ def test_classifier_cmd() -> None:
         print(f"{score:>{col_score}}  {flag:<{col_flag}}  {_truncate(prompt, col_prompt)}")
 
 
-# ── promptforge-memory ────────────────────────────────────────────────────────
+# ── preprompt-memory ─────────────────────────────────────────────────────────
 
 def memory_cmd() -> None:
     conn = _open_db()
@@ -194,7 +194,7 @@ def memory_cmd() -> None:
     conn.close()
 
     sep = "─" * 54
-    print(" PromptForge — learned stack memory")
+    print(" PrePrompt — learned stack memory")
     print(sep)
     for key, value, confidence, source_count, _ in rows:
         print(
@@ -208,7 +208,7 @@ def memory_cmd() -> None:
     print("  Tip: more prompts = better optimization context")
 
 
-# ── promptforge-update-context ────────────────────────────────────────────────
+# ── preprompt-update-context ─────────────────────────────────────────────────
 
 def update_context_cmd() -> None:
     """Regenerate CONTEXT.md with current phase, test count, and file map."""
@@ -237,7 +237,7 @@ def update_context_cmd() -> None:
     # Add / refresh last-updated timestamp at the top
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     content = re.sub(r"^<!-- Last updated: .* -->\n", "", content)
-    if content.startswith("# PromptForge"):
+    if content.startswith("# PrePrompt"):
         content = f"<!-- Last updated: {timestamp} -->\n" + content
 
     context_path.write_text(content)

@@ -1,4 +1,4 @@
-# PromptForge
+# PrePrompt
 
 > Your prompts, battle-tested. An MCP server that intercepts and optimizes
 > prompts in Claude Code and Cursor before they reach the LLM.
@@ -7,7 +7,7 @@
 
 Most prompts sent to an LLM are underspecified — they're missing context,
 output format expectations, or technical constraints that the developer has in
-their head but didn't type. PromptForge sits between your keyboard and the
+their head but didn't type. PrePrompt sits between your keyboard and the
 model, scores every prompt with a heuristic classifier, and rewrites the
 complex ones using Claude Haiku before the main model ever sees them. Simple
 prompts ("what is jwt") pass through untouched in under 1ms. No API cost, no
@@ -32,7 +32,7 @@ AFTER   Write a Python function for FastAPI that handles YouTube OAuth 2.0
 When a prompt is intercepted you see this in your terminal:
 
 ```
-╔═ PromptForge +58 ══════════════════════════════════════════╗
+╔═ PrePrompt +58 ════════════════════════════════════════════╗
 ║ The rewritten prompt specifies the technical               ║
 ║ implementation details, clarifies the complete workflow,   ║
 ║ and adds concrete error scenarios and storage              ║
@@ -49,8 +49,8 @@ When a prompt is intercepted you see this in your terminal:
 ## Install
 
 ```bash
-git clone https://github.com/yashdeeptehlan/promptforge
-cd promptforge
+git clone https://github.com/yashdeeptehlan/preprompt
+cd preprompt
 ./scripts/install.sh
 ```
 
@@ -68,7 +68,7 @@ python scripts/install_cursor.py
 - **Pure heuristics, zero API calls** — runs on every prompt in under 1ms
 - Scores each prompt based on: ambiguity verbs, multi-requirement density,
   turn depth, and missing output format signals
-- **Only intercepts when score ≥ 45** — simple prompts always pass through
+- **Only intercepts when score ≥ 38** — simple prompts always pass through
 - Negative signals: short prompts, lookup questions (`what is`, `what does`),
   already-structured prompts all score low and get skipped
 
@@ -84,13 +84,13 @@ SCORE  INTERCEPT  PROMPT
 
 ## Stack memory
 
-PromptForge learns your stack as you work. After a few sessions it knows your
+PrePrompt learns your stack as you work. After a few sessions it knows your
 language, framework, and style preferences and injects that context into every
 optimization automatically.
 
 ```
-$ promptforge-memory
- PromptForge — learned stack memory
+$ preprompt-memory
+ PrePrompt — learned stack memory
 ──────────────────────────────────────────────────────
   language     python           confidence: 0.92  (seen 47x)
   framework    fastapi          confidence: 0.88  (seen 31x)
@@ -100,15 +100,15 @@ $ promptforge-memory
 ## CLI
 
 ```bash
-promptforge-history          # recent prompt events across all sessions
-promptforge-stats            # optimization stats (total, intercepted, avg score)
-promptforge-memory           # learned stack context
-promptforge-test-classifier  # test classifier on sample prompts
+preprompt-history          # recent prompt events across all sessions
+preprompt-stats            # optimization stats (total, intercepted, avg score)
+preprompt-memory           # learned stack context
+preprompt-test-classifier  # test classifier on sample prompts
 ```
 
 ## Cost
 
-PromptForge uses `claude-haiku-4-5` for optimization — the cheapest Claude
+PrePrompt uses `claude-haiku-4-5` for optimization — the cheapest Claude
 model. Typical cost: ~$0.001 per intercepted prompt. At 20 complex prompts
 per day that's roughly **$0.60/month**. Simple prompts are never sent to the
 API.
@@ -121,14 +121,14 @@ Claude Code / Cursor
         ▼  UserPromptSubmit hook
   pre_prompt.py
   ├── classify_prompt()     ← pure heuristic, <1ms, no API
-  ├── [score < 45] ──────► pass through unchanged
-  └── [score ≥ 45]
+  ├── [score < 38] ──────► pass through unchanged
+  └── [score ≥ 38]
       ├── optimize()        ← Haiku API call with stack context
-      ├── write sidecar     ← ~/.promptforge/pending/<uuid>.json
+      ├── write sidecar     ← ~/.preprompt/pending/<uuid>.json
       └── return optimized prompt
         │
         ▼  MCP server (on next tool call)
-  flush_pending_hook_events()  ← sidecars → DuckDB
+  flush_pending_hook_events()  ← sidecars → SQLite
   save_prompt_event()
   update_memory_from_prompt()
 ```
@@ -150,7 +150,7 @@ file so there's no lock conflict with the MCP server.
 | `ANTHROPIC_API_KEY` | — | Required for optimizer |
 | `MCP_TRANSPORT` | `stdio` | `stdio` or `sse` |
 
-Storage is always at `~/.promptforge/history.db` (created automatically).
+Storage is always at `~/.preprompt/history.db` (created automatically).
 
 ## Requirements
 

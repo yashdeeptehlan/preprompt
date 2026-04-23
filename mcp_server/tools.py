@@ -12,7 +12,7 @@ from storage.db import (
     flush_pending_hook_events,
 )
 
-mcp = FastMCP("PromptForge")
+mcp = FastMCP("PrePrompt")
 
 # Stable session identity: one session per hostname per calendar day.
 # Kept as a module-level alias so existing tests can import _SESSION_ID.

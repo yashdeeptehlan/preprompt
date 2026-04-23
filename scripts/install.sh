@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Installing PromptForge..."
+echo "Installing PrePrompt..."
 
 # 1. Check Python >= 3.11
 python3 --version | grep -E "3\.(1[1-9]|[2-9][0-9])" || {
@@ -32,7 +32,7 @@ python3 scripts/install_cursor.py
 
 # 7. Print success
 echo ""
-echo "PromptForge installed successfully."
+echo "PrePrompt installed successfully."
 echo ""
 echo "Restart Claude Code and Cursor to activate."
-echo "Test with: promptforge-test-classifier"
+echo "Test with: preprompt-test-classifier"

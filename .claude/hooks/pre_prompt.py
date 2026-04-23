@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Claude Code UserPromptSubmit hook for PromptForge.
+Claude Code UserPromptSubmit hook for PrePrompt.
 
 Receives JSON on stdin, writes JSON to stdout.
   stdin:  {"prompt": "...", "conversation_history": [...], "turn_number": N}
   stdout: {"prompt": "..."}   ← optimized or original, never blocked
 
-DB writes are done via JSON sidecar files in ~/.promptforge/pending/
-so the hook never touches the DuckDB file directly (avoids lock conflict
+DB writes are done via JSON sidecar files in ~/.preprompt/pending/
+so the hook never touches the SQLite file directly (avoids lock conflict
 with the running MCP server). The MCP server flushes sidecars on the
 next optimize_prompt call.
 """
@@ -33,8 +33,8 @@ def _box_line(content: str) -> str:
 def _render_annotation(score: int, reason: str, original: str, optimized: str) -> str:
     import textwrap
 
-    # Header: ╔═ PromptForge +{score} ══...══╗
-    prefix = f"╔═ PromptForge +{score} "
+    # Header: ╔═ PrePrompt +{score} ══...══╗
+    prefix = f"╔═ PrePrompt +{score} "
     header = prefix + "═" * (_WIDTH - len(prefix) - 1) + "╗"
 
     # Reason (wrapped to inner width)
@@ -66,7 +66,7 @@ def _write_sidecar(
     was_intercepted: bool,
     turn_number: int,
 ) -> None:
-    """Write event to ~/.promptforge/pending/<uuid>.json for async DB flush."""
+    """Write event to ~/.preprompt/pending/<uuid>.json for async DB flush."""
     sidecar = {
         "original_prompt": prompt,
         "optimized_prompt": optimized,
@@ -75,7 +75,7 @@ def _write_sidecar(
         "turn_number": turn_number,
         "timestamp": time.time(),
     }
-    sidecar_dir = Path.home() / ".promptforge" / "pending"
+    sidecar_dir = Path.home() / ".preprompt" / "pending"
     sidecar_dir.mkdir(parents=True, exist_ok=True)
     sidecar_path = sidecar_dir / f"{uuid.uuid4()}.json"
     sidecar_path.write_text(json.dumps(sidecar))
@@ -104,7 +104,7 @@ def main() -> None:
         _HOOK_FILE = os.path.abspath(__file__)
         _HOOK_DIR = os.path.dirname(_HOOK_FILE)          # .claude/hooks/
         _CLAUDE_DIR = os.path.dirname(_HOOK_DIR)          # .claude/
-        _PROJECT_ROOT = os.path.dirname(_CLAUDE_DIR)      # promptforge/
+        _PROJECT_ROOT = os.path.dirname(_CLAUDE_DIR)      # project root
 
         # Add project root to path so mcp_server imports work
         if _PROJECT_ROOT not in sys.path:
@@ -127,7 +127,7 @@ def main() -> None:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         if not api_key:
             print(
-                "[PromptForge WARNING] ANTHROPIC_API_KEY not set — skipping optimization",
+                "[PrePrompt WARNING] ANTHROPIC_API_KEY not set — skipping optimization",
                 file=sys.stderr,
             )
             passthrough()
@@ -145,18 +145,18 @@ def main() -> None:
         try:
             _write_sidecar(prompt, optimized, score, was_intercepted, turn)
         except Exception as sidecar_err:
-            print(f"[PromptForge] Sidecar write failed: {sidecar_err}", file=sys.stderr)
+            print(f"[PrePrompt] Sidecar write failed: {sidecar_err}", file=sys.stderr)
 
         # ── Rich annotation to stderr ─────────────────────────────────────────
         if was_intercepted:
             print(_render_annotation(score, reason, prompt, optimized), file=sys.stderr)
         else:
-            print(f"[PromptForge +{score}] {reason}", file=sys.stderr)
+            print(f"[PrePrompt +{score}] {reason}", file=sys.stderr)
 
         print(json.dumps({"prompt": optimized}))
 
     except Exception as e:
-        print(f"[PromptForge ERROR] {e}", file=sys.stderr)
+        print(f"[PrePrompt ERROR] {e}", file=sys.stderr)
         passthrough()
 
     sys.exit(0)

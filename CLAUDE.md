@@ -21,11 +21,11 @@ pip install -e ".[dev]"
 python -m mcp_server.server
 
 # CLI tools (after pip install)
-promptforge-history [--limit N] [--intercepted-only]
-promptforge-stats
-promptforge-test-classifier
-promptforge-memory
-promptforge-update-context
+preprompt-history [--limit N] [--intercepted-only]
+preprompt-stats
+preprompt-test-classifier
+preprompt-memory
+preprompt-update-context
 
 # One-command install + global hook registration
 bash scripts/install.sh
@@ -33,7 +33,7 @@ bash scripts/install.sh
 
 ## Architecture
 
-PromptForge is an MCP server that intercepts prompts before they reach the LLM, scores them with a local heuristic classifier, optionally rewrites vague/complex ones via Claude Haiku, and logs everything to a local SQLite DB.
+PrePrompt is an MCP server that intercepts prompts before they reach the LLM, scores them with a local heuristic classifier, optionally rewrites vague/complex ones via Claude Haiku, and logs everything to a local SQLite DB.
 
 ### Request flow
 
@@ -43,7 +43,7 @@ User types prompt
         → classify_prompt()        (score 0–100, no API call)
         → if score < 38: passthrough
         → else: optimize() via Haiku API
-        → write JSON sidecar → ~/.promptforge/pending/<uuid>.json
+        → write JSON sidecar → ~/.preprompt/pending/<uuid>.json
         → print optimized prompt to stdout
     → Claude Code sends optimized prompt to LLM
     → (next MCP tool call)
@@ -66,7 +66,7 @@ The hook **never touches the DB directly** — this avoids SQLite lock contentio
 
 ### Data directory
 
-All runtime data lives in `~/.promptforge/`:
+All runtime data lives in `~/.preprompt/`:
 - `history.db` — SQLite database
 - `pending/*.json` — sidecar files written by hook, flushed by MCP server
 
@@ -95,7 +95,7 @@ After completing any task in this repository, you MUST always:
 
 1. Run `pytest -v` and confirm all tests still pass
 
-2. Run `promptforge-update-context` to update CONTEXT.md
+2. Run `preprompt-update-context` to update CONTEXT.md
 
 3. Update CLAUDE.md if any architecture, file map, or interface changed
 
