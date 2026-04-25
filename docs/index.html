@@ -56,7 +56,7 @@
       <a class="text-on-surface-variant hover:text-white transition-colors text-sm font-medium" href="#faq">FAQ</a>
       <a class="text-on-surface-variant hover:text-white transition-colors text-sm font-medium" href="https://github.com/yashdeeptehlan/preprompt" target="_blank">GitHub</a>
     </div>
-    <a href="#beta" class="bg-primary-container text-white px-5 py-2 rounded-lg font-bold text-sm hover:bg-purple-700 transition-all">
+    <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" class="bg-primary-container text-white px-5 py-2 rounded-lg font-bold text-sm hover:bg-purple-700 transition-all">
       Join Beta
     </a>
   </div>
@@ -78,7 +78,7 @@
       Vague in. Sharp out. PrePrompt sits between you and your LLM — intercepts every prompt, scores complexity in &lt;1ms, and rewrites vague requests into precise specifications automatically, inside Claude Code and Cursor.
     </p>
     <div class="flex flex-col sm:flex-row justify-center gap-4 mb-12">
-      <a href="#beta" class="bg-primary-container text-white px-8 py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-primary-container/20">
+      <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" class="bg-primary-container text-white px-8 py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-purple-700 transition-all shadow-xl shadow-primary-container/20">
         Join the Beta →
       </a>
       <a href="https://github.com/yashdeeptehlan/preprompt" target="_blank" class="bg-surface-high/50 border border-outline/30 text-white px-8 py-4 rounded-lg font-bold flex items-center justify-center gap-2 hover:bg-surfhigh transition-all">
@@ -354,11 +354,23 @@
     <div class="absolute inset-0 opacity-10" style="background-image: radial-gradient(circle, white 1px, transparent 1px); background-size: 20px 20px;"></div>
     <h2 class="text-3xl lg:text-5xl font-headline font-bold text-white mb-6 relative z-10">Get early access.</h2>
     <p class="text-purple-200 text-lg mb-10 max-w-xl mx-auto relative z-10">Free forever for open source. Shape the roadmap. Join developers already using PrePrompt in their daily workflow.</p>
-    <form class="flex flex-col sm:flex-row gap-4 max-w-md mx-auto relative z-10" onsubmit="handleSignup(event)">
-      <input id="email-input" class="flex-grow bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30" placeholder="Enter your email" type="email" required/>
-      <button type="submit" class="bg-white text-primary-container px-8 py-4 rounded-xl font-bold hover:bg-purple-50 transition-all">Join Beta</button>
-    </form>
-    <div id="signup-success" class="hidden mt-4 text-emerald-300 font-mono text-sm relative z-10">✓ You're on the list. We'll be in touch.</div>
+    <div class="flex flex-col sm:flex-row gap-4 max-w-md mx-auto relative z-10">
+      <input
+        id="email-input"
+        class="flex-grow bg-white/10 border border-white/20 rounded-xl px-6 py-4 text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-white/30"
+        placeholder="Enter your email"
+        type="email"
+      />
+      <a
+        id="beta-join-btn"
+        href="https://preprompt.beehiiv.com/subscribe"
+        target="_blank"
+        onclick="appendEmail()"
+        class="bg-white text-primary-container px-8 py-4 rounded-xl font-bold hover:bg-purple-50 transition-all text-center cursor-pointer"
+      >
+        Join Beta
+      </a>
+    </div>
     <div class="flex flex-wrap justify-center gap-3 mt-6 relative z-10">
       <span class="text-xs text-purple-200 border border-white/10 px-3 py-1 rounded-full">Free beta access</span>
       <span class="text-xs text-purple-200 border border-white/10 px-3 py-1 rounded-full">Shape the roadmap</span>
@@ -636,11 +648,12 @@ function replaySession() {
   });
 }
 
-function handleSignup(e) {
-  e.preventDefault();
-  const email = document.getElementById('email-input').value;
-  document.getElementById('signup-success').classList.remove('hidden');
-  document.getElementById('email-input').value = '';
+function appendEmail() {
+  const email = document.getElementById('email-input').value.trim();
+  const btn = document.getElementById('beta-join-btn');
+  if (email) {
+    btn.href = 'https://preprompt.beehiiv.com/subscribe?email=' + encodeURIComponent(email);
+  }
 }
 
 const style = document.createElement('style');

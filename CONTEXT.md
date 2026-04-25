@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-04-23 -->
+<!-- Last updated: 2026-04-25 -->
 # PrePrompt — CONTEXT.md
 # This file is auto-maintained. Read it fully at the start of every chat.
 

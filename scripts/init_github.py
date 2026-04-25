@@ -38,7 +38,8 @@ def main() -> None:
 
     # ── git commit ────────────────────────────────────────────────────────────
     result = _run(
-        ["git", "commit", "-m", "feat: PrePrompt v0.1 — MCP prompt optimizer"],
+        ["git", "-c", "user.name=yashdeeptehlan", "-c", "user.email=0yashdeeptehlan@gmail.com",
+         "commit", "-m", "feat: PrePrompt v0.1 — MCP prompt optimizer"],
         repo_root,
     )
     if result.returncode != 0:

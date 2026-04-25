@@ -102,7 +102,7 @@ After completing any task in this repository, you MUST always:
 4. Commit with a clear descriptive message authored by Yashdeep Tehlan:
 
    ```
-   git -c user.name="yashdeeptehlan" -c user.email="0yashdeeptehlan@gmail.com" commit -m "your message"
+   git -c user.name="yashdeeptehlan" -c user.email="0yashdeeptehlan@gmail.com" commit -m "your message here"
    ```
 
 5. Push to main
