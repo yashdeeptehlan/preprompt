@@ -1,4 +1,4 @@
-<!-- Last updated: 2026-04-28 12:18 -->
+<!-- Last updated: 2026-04-28 12:58 -->
 # PrePrompt — CONTEXT.md
 # This file is auto-maintained. Read it fully at the start of every chat.
 
@@ -95,6 +95,7 @@ tests/
 - Phase 7c: preprompt.skill.md — Claude Skill for tools without MCP support
 - Phase 8: activity.log in hook, preprompt-watch live feed, preprompt-clip clipboard optimizer, session summary on server shutdown
 - Phase 8b: flush sidecars runs memory extraction (Claude Code → stack memory), watch auto-flushes on startup
+- Phase 8c: preprompt-update command, version check on stats/history startup, version in stats header
 
 ## Runtime files
 - ~/.preprompt/history.db     — SQLite WAL database

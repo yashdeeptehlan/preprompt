@@ -46,7 +46,10 @@ preprompt-history            = "cli.commands:history_cmd"
 preprompt-stats              = "cli.commands:stats_cmd"
 preprompt-test-classifier    = "cli.commands:test_classifier_cmd"
 preprompt-memory             = "cli.commands:memory_cmd"
+preprompt-clip               = "cli.commands:clip_cmd"
 preprompt-optimize           = "cli.commands:optimize_cmd"
+preprompt-watch              = "cli.watch:watch_cmd"
+preprompt-update             = "cli.commands:update_cmd"
 preprompt-update-context     = "cli.commands:update_context_cmd"
 
 [tool.hatch.build.targets.wheel]

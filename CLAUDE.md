@@ -27,6 +27,9 @@ preprompt-test-classifier
 preprompt-memory
 preprompt-optimize "your prompt here"   # or pipe: echo "..." | preprompt-optimize
 preprompt-optimize --raw "prompt"        # prints optimized text only
+preprompt-watch                          # live tail of ~/.preprompt/activity.log
+preprompt-clip                           # read clipboard, optimize, write back (macOS)
+preprompt-update                         # upgrade to latest PyPI version + re-register hooks
 preprompt-update-context
 
 # One-command install + global hook registration (auto-detects Claude Code, Cursor, Windsurf, Zed)

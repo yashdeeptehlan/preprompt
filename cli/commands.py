@@ -52,9 +52,30 @@ def _open_db() -> sqlite3.Connection:
     return get_read_connection()
 
 
+# ── Version check ────────────────────────────────────────────────────────────
+
+def _check_for_updates() -> None:
+    """Silently check PyPI for newer version. Print notice if behind."""
+    try:
+        import urllib.request, json
+        from importlib.metadata import version as pkg_version
+        current = pkg_version("preprompt")
+        url = "https://pypi.org/pypi/preprompt/json"
+        req = urllib.request.Request(url, headers={"User-Agent": "preprompt-cli"})
+        with urllib.request.urlopen(req, timeout=2) as r:
+            latest = json.loads(r.read())["info"]["version"]
+        if latest != current:
+            print(f"  ⚡ PrePrompt {latest} available (you have {current})")
+            print(f"     Run: preprompt-update")
+            print()
+    except Exception:
+        pass  # never block CLI on network failure
+
+
 # ── preprompt-history ────────────────────────────────────────────────────────
 
 def history_cmd() -> None:
+    _check_for_updates()
     parser = argparse.ArgumentParser(
         prog="preprompt-history",
         description="Show recent prompts seen by PrePrompt (all sessions).",
@@ -101,6 +122,7 @@ def history_cmd() -> None:
 # ── preprompt-stats ──────────────────────────────────────────────────────────
 
 def stats_cmd() -> None:
+    _check_for_updates()
     from storage.db import flush_pending_hook_events
     flush_pending_hook_events()
     conn = _open_db()
@@ -122,8 +144,13 @@ def stats_cmd() -> None:
     avg_intercepted = avg_intercepted or 0.0
     pct = (intercepted / total * 100) if total else 0.0
 
+    try:
+        from importlib.metadata import version as pkg_version
+        v = pkg_version("preprompt")
+    except Exception:
+        v = "dev"
     sep = "─" * 46
-    print(f" PrePrompt — optimization stats")
+    print(f" PrePrompt v{v} — optimization stats")
     print(sep)
     print(f" Total prompts seen:      {total}")
     print(f" Prompts intercepted:     {intercepted} ({pct:.1f}%)")
@@ -209,6 +236,54 @@ def memory_cmd() -> None:
     print("  Tip: more prompts = better optimization context")
 
 
+# ── preprompt-clip ───────────────────────────────────────────────────────────
+
+def clip_cmd() -> None:
+    """Read clipboard, optimize, write back to clipboard. macOS only (pbpaste/pbcopy).
+    Linux users: pipe manually via  echo "..." | preprompt-optimize --raw | xclip
+    """
+    import subprocess
+
+    try:
+        pb = subprocess.run(["pbpaste"], capture_output=True, text=True)
+        prompt = pb.stdout.strip()
+    except FileNotFoundError:
+        print("Error: pbpaste not found. This command requires macOS.", file=sys.stderr)
+        print("Linux alternative: echo '...' | preprompt-optimize --raw | xclip")
+        return
+    except Exception as e:
+        print(f"Error reading clipboard: {e}", file=sys.stderr)
+        return
+
+    if not prompt:
+        print("Clipboard is empty.")
+        return
+
+    _here = Path(__file__).resolve().parent.parent
+    if str(_here) not in sys.path:
+        sys.path.insert(0, str(_here))
+
+    from mcp_server.classifier import classify_prompt, OPTIMIZATION_THRESHOLD
+    from mcp_server.optimizer import optimize
+    from dotenv import load_dotenv
+    load_dotenv(_here / ".env")
+
+    score = classify_prompt(prompt, [], 1)
+
+    if score < OPTIMIZATION_THRESHOLD:
+        print(f"Score {score} — below threshold, prompt is clear enough.")
+        return
+
+    print(f"Optimizing… (score {score})")
+    opt_result = optimize(prompt, [])
+    optimized = opt_result["optimized_prompt"]
+
+    subprocess.run(["pbcopy"], input=optimized, text=True)
+    print(f"✓ Optimized and copied to clipboard (+{score})")
+    if opt_result.get("reason"):
+        print(f"  {opt_result['reason']}")
+
+
 # ── preprompt-optimize ───────────────────────────────────────────────────────
 
 def optimize_cmd() -> None:
@@ -271,6 +346,61 @@ def optimize_cmd() -> None:
         print(sep)
         print(optimized)
         print(sep)
+
+
+# ── preprompt-update ─────────────────────────────────────────────────────────
+
+def update_cmd() -> None:
+    """Upgrade PrePrompt to latest version and re-register hooks."""
+    import subprocess
+    from importlib.metadata import version as pkg_version
+
+    current = pkg_version("preprompt")
+    print(f"  Current version: {current}")
+    print(f"  Checking PyPI...")
+
+    try:
+        import urllib.request, json
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/preprompt/json",
+            headers={"User-Agent": "preprompt-cli"},
+        )
+        with urllib.request.urlopen(req, timeout=5) as r:
+            latest = json.loads(r.read())["info"]["version"]
+    except Exception as e:
+        print(f"  Could not reach PyPI: {e}")
+        return
+
+    if latest == current:
+        print(f"  Already on latest ({current})")
+        return
+
+    print(f"  Upgrading {current} → {latest}...")
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "preprompt"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"  Upgrade failed:\n{result.stderr}")
+        return
+
+    print(f"  ✓ Upgraded to {latest}")
+    print()
+    print(f"  Re-registering hooks...")
+
+    import importlib.util
+    from pathlib import Path
+    spec = importlib.util.find_spec("mcp_server")
+    if spec:
+        project_root = Path(spec.origin).parent.parent
+        hook_script = project_root / "scripts" / "setup_global_hook.py"
+        if hook_script.exists():
+            subprocess.run([sys.executable, str(hook_script)])
+            print(f"  Hooks re-registered")
+        else:
+            print(f"  ⚠ Run manually: python scripts/setup_global_hook.py")
+    print()
+    print(f"  Restart Claude Code and Cursor to activate {latest}")
 
 
 # ── preprompt-update-context ─────────────────────────────────────────────────
