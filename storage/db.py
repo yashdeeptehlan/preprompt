@@ -289,6 +289,8 @@ def flush_pending_hook_events() -> int:
 
     Called by the MCP server at the start of optimize_prompt() so hook events
     are persisted without the hook ever touching the DB directly.
+    Also runs update_memory_from_prompt() on each flushed event so Claude Code
+    sessions contribute to stack memory.
     """
     pending_dir = Path.home() / ".preprompt" / "pending"
     if not pending_dir.exists():
@@ -317,6 +319,11 @@ def flush_pending_hook_events() -> int:
             conn.commit()
             sidecar_path.unlink()
             flushed += 1
+            try:
+                from mcp_server.extractor import update_memory_from_prompt
+                update_memory_from_prompt(data["original_prompt"], [])
+            except Exception:
+                pass
         except Exception:
             pass
     return flushed

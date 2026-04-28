@@ -1,9 +1,9 @@
-<!-- Last updated: 2026-04-28 00:33 -->
+<!-- Last updated: 2026-04-28 12:18 -->
 # PrePrompt — CONTEXT.md
 # This file is auto-maintained. Read it fully at the start of every chat.
 
 ## Build status
-Phase 7c complete. 28/28 tests passing.
+Phase 8 complete. 29/29 tests passing.
 
 ## What PrePrompt does
 MCP server that intercepts prompts in Claude Code and Cursor, scores them
@@ -31,19 +31,23 @@ storage/
   db.py          — SQLite WAL: prompt_history + stack_memory + sessions tables
                    Sidecar pattern: hook writes JSON to ~/.preprompt/pending/,
                    flushed by MCP server or CLI commands via flush_pending_hook_events()
+                   flush_pending_hook_events() also calls update_memory_from_prompt()
+                   so Claude Code sessions contribute to stack memory
                    get_or_create_session(): stable {hostname}-{date} session key
                    get_all_history(): cross-session history query
                    upsert_stack_memory(): compounding confidence (+0.02/hit, reset on value change)
 
 cli/
-  commands.py    — preprompt-history (all sessions), stats, memory,
-                   test-classifier, optimize, update-context
+  commands.py    — preprompt-history, stats, memory, test-classifier,
+                   clip (clipboard optimizer), optimize, update-context
+  watch.py       — preprompt-watch: auto-flushes sidecars on startup, live tail of ~/.preprompt/activity.log
 
 .claude/
   settings.json           — MCP server + UserPromptSubmit hook config
   hooks/pre_prompt.py     — interception hook with rich box annotation on stderr
                             path resolved via __file__ (CWD-independent)
                             writes JSON sidecar to ~/.preprompt/pending/ — never touches DB directly
+                            appends every event to ~/.preprompt/activity.log via _log_activity()
 
 scripts/
   install.sh              — one-command installer (auto-detects Claude Code, Cursor, Windsurf, Zed)
@@ -64,7 +68,7 @@ LICENSE                   — MIT
 tests/
   test_classifier.py    — 12 tests
   test_optimizer.py     —  4 tests
-  test_integration.py   — 12 tests
+  test_integration.py   — 13 tests (incl. activity log write test)
 
 ## Key interfaces — never change these signatures
 - classify_prompt(prompt: str, history: list, turn: int) -> int
@@ -89,6 +93,13 @@ tests/
 - Phase 7: GitHub Actions CI + publish workflow, PyPI trusted publisher setup
 - Phase 7b: preprompt-optimize CLI command, Windsurf + Zed MCP installers
 - Phase 7c: preprompt.skill.md — Claude Skill for tools without MCP support
+- Phase 8: activity.log in hook, preprompt-watch live feed, preprompt-clip clipboard optimizer, session summary on server shutdown
+- Phase 8b: flush sidecars runs memory extraction (Claude Code → stack memory), watch auto-flushes on startup
+
+## Runtime files
+- ~/.preprompt/history.db     — SQLite WAL database
+- ~/.preprompt/pending/*.json — hook sidecars (flushed by MCP server)
+- ~/.preprompt/activity.log   — plain-text event log (tailed by preprompt-watch)
 
 ## PyPI publish instructions
 1. Create account at https://pypi.org
