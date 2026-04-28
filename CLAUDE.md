@@ -25,10 +25,17 @@ preprompt-history [--limit N] [--intercepted-only]
 preprompt-stats
 preprompt-test-classifier
 preprompt-memory
+preprompt-optimize "your prompt here"   # or pipe: echo "..." | preprompt-optimize
+preprompt-optimize --raw "prompt"        # prints optimized text only
 preprompt-update-context
 
-# One-command install + global hook registration
+# One-command install + global hook registration (auto-detects Claude Code, Cursor, Windsurf, Zed)
 bash scripts/install.sh
+
+# Per-IDE registration
+python scripts/install_cursor.py
+python scripts/install_windsurf.py
+python scripts/install_zed.py
 ```
 
 ## Architecture
@@ -61,8 +68,12 @@ The hook **never touches the DB directly** — this avoids SQLite lock contentio
 | `mcp_server/tools.py` | MCP tool `optimize_prompt()` — entry point from Claude Code. Calls `flush_pending_hook_events()` first. |
 | `mcp_server/extractor.py` | Extracts stack facts (language, framework, etc.) from prompts → `stack_memory`. |
 | `storage/db.py` | SQLite (WAL mode). Tables: `prompt_history`, `stack_memory`, `sessions`. `_get_connection()` is the long-lived write conn; `get_read_connection()` opens fresh read conns for CLI/history. |
-| `cli/commands.py` | CLI entry points. Always calls `flush_pending_hook_events()` before reading history. |
+| `cli/commands.py` | CLI entry points. Always calls `flush_pending_hook_events()` before reading history. Includes `optimize_cmd` for standalone CLI optimization. |
 | `.claude/hooks/pre_prompt.py` | Hook subprocess. Resolves project root via `__file__` (not cwd). Writes sidecars, never imports `storage.db`. |
+| `scripts/install_windsurf.py` | Registers MCP in `~/.codeium/windsurf/mcp_config.json`. |
+| `scripts/install_zed.py` | Registers MCP in `~/.config/zed/settings.json`. |
+| `.github/workflows/publish.yml` | Publishes to PyPI on `git tag v*` via OIDC trusted publisher. |
+| `preprompt.skill.md` | Claude Skill file — manual PrePrompt scoring/optimization for tools without MCP. |
 
 ### Data directory
 

@@ -1,9 +1,9 @@
-<!-- Last updated: 2026-04-25 -->
+<!-- Last updated: 2026-04-27 22:26 -->
 # PrePrompt — CONTEXT.md
 # This file is auto-maintained. Read it fully at the start of every chat.
 
 ## Build status
-Phase 6 complete. 28/28 tests passing.
+Phase 7c complete. 28/28 tests passing.
 
 ## What PrePrompt does
 MCP server that intercepts prompts in Claude Code and Cursor, scores them
@@ -37,7 +37,7 @@ storage/
 
 cli/
   commands.py    — preprompt-history (all sessions), stats, memory,
-                   test-classifier, update-context
+                   test-classifier, optimize, update-context
 
 .claude/
   settings.json           — MCP server + UserPromptSubmit hook config
@@ -46,10 +46,18 @@ cli/
                             writes JSON sidecar to ~/.preprompt/pending/ — never touches DB directly
 
 scripts/
-  install.sh              — one-command installer (Python check, pip, .env, hooks)
+  install.sh              — one-command installer (auto-detects Claude Code, Cursor, Windsurf, Zed)
   setup_global_hook.py    — global Claude Code MCP + UserPromptSubmit registration
   install_cursor.py       — registers MCP in ~/.cursor/mcp.json
+  install_windsurf.py     — registers MCP in ~/.codeium/windsurf/mcp_config.json
+  install_zed.py          — registers MCP in ~/.config/zed/settings.json
   init_github.py          — git init + first commit + push instructions
+
+.github/
+  workflows/ci.yml        — runs pytest on every push/PR
+  workflows/publish.yml   — builds + publishes to PyPI on git tag v*
+
+preprompt.skill.md        — Claude Skill file for tools without MCP hook support
 
 LICENSE                   — MIT
 
@@ -78,11 +86,20 @@ tests/
 - Phase 5: session identity, memory consolidation, rich annotations, cross-session history
 - Phase 6: packaging, SQLite WAL migration, sidecar concurrency pattern, classifier tuned (38/12), absolute hook path, one-command install, MIT license, distribution README
 - Phase 6b: global rename PromptForge → PrePrompt
+- Phase 7: GitHub Actions CI + publish workflow, PyPI trusted publisher setup
+- Phase 7b: preprompt-optimize CLI command, Windsurf + Zed MCP installers
+- Phase 7c: preprompt.skill.md — Claude Skill for tools without MCP support
+
+## PyPI publish instructions
+1. Create account at https://pypi.org
+2. Go to https://pypi.org/manage/account/publishing/
+3. Add trusted publisher: owner=yashdeeptehlan, repo=preprompt, workflow=publish.yml, env=release
+4. Create GitHub environment "release" at https://github.com/yashdeeptehlan/preprompt/settings/environments
+5. Tag a release: git tag v0.1.0 && git push origin v0.1.0
 
 ## Next phases
-- Phase 7: PyPI publish (pip install preprompt)
-- Phase 7b: preprompt-optimize CLI command + multi-IDE support (Windsurf, Zed)
-- Phase 7c (bonus): PrePrompt as a Claude Skill — a .md skill file for tools that don't support MCP hooks
+- Phase 8: web dashboard (local FastAPI + HTMX) to browse history and replay sessions
+- Phase 8b: prompt diff view (original vs optimized, side by side)
 
 ## GitHub Pages
 Landing page: https://yashdeeptehlan.github.io/preprompt/

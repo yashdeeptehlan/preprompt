@@ -7,6 +7,7 @@ preprompt-history            View recent prompt history (all sessions)
 preprompt-stats              Aggregate optimization stats
 preprompt-test-classifier    Run the classifier against 6 benchmark prompts
 preprompt-memory             Show learned stack memory
+preprompt-optimize           Optimize a prompt from the command line
 """
 
 import argparse
@@ -206,6 +207,70 @@ def memory_cmd() -> None:
     print(f"  Total prompts analyzed: {total_prompts}")
     print(sep)
     print("  Tip: more prompts = better optimization context")
+
+
+# ── preprompt-optimize ───────────────────────────────────────────────────────
+
+def optimize_cmd() -> None:
+    """Optimize a prompt from stdin or --prompt flag and print the result."""
+    _here = Path(__file__).resolve().parent.parent
+    if str(_here) not in sys.path:
+        sys.path.insert(0, str(_here))
+
+    parser = argparse.ArgumentParser(
+        prog="preprompt-optimize",
+        description="Optimize a prompt using Claude Haiku and your stack memory.",
+    )
+    parser.add_argument("prompt", nargs="?", help="Prompt text (omit to read from stdin)")
+    parser.add_argument("--raw", action="store_true", help="Print only the optimized prompt text")
+    args = parser.parse_args()
+
+    if args.prompt:
+        prompt_text = args.prompt
+    elif not sys.stdin.isatty():
+        prompt_text = sys.stdin.read().strip()
+    else:
+        print("Error: provide a prompt as an argument or pipe it via stdin.", file=sys.stderr)
+        sys.exit(1)
+
+    if not prompt_text:
+        print("Error: empty prompt.", file=sys.stderr)
+        sys.exit(1)
+
+    from mcp_server.classifier import classify_prompt, OPTIMIZATION_THRESHOLD
+    from mcp_server.optimizer import optimize
+
+    score = classify_prompt(prompt_text, history=[], turn=1)
+    if not args.raw:
+        print(f"Classifier score: {score} (threshold: {OPTIMIZATION_THRESHOLD})")
+
+    if score < OPTIMIZATION_THRESHOLD:
+        if not args.raw:
+            print("Prompt is already clear — no optimization needed.")
+            print()
+            print(prompt_text)
+        else:
+            print(prompt_text)
+        return
+
+    if not args.raw:
+        print("Optimizing…")
+        print()
+
+    try:
+        result = optimize(prompt_text, history=[])
+    except Exception as e:
+        print(f"Optimization failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    optimized = result.get("optimized_prompt") or prompt_text
+    if args.raw:
+        print(optimized)
+    else:
+        sep = "─" * 60
+        print(sep)
+        print(optimized)
+        print(sep)
 
 
 # ── preprompt-update-context ─────────────────────────────────────────────────

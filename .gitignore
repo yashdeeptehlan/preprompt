@@ -27,6 +27,6 @@ venv/
 .coverage
 htmlcov/
 
-# PromptForge runtime DB lives outside the repo:
-# ~/.promptforge/history.db  ← not tracked
+# PrePrompt runtime DB lives outside the repo:
+# ~/.preprompt/history.db  ← not tracked
 .venv/

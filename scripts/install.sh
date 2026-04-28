@@ -30,9 +30,19 @@ python3 scripts/setup_global_hook.py
 # 6. Register Cursor
 python3 scripts/install_cursor.py
 
-# 7. Print success
+# 7. Register Windsurf (if installed)
+if [ -d "$HOME/.codeium/windsurf" ]; then
+    python3 scripts/install_windsurf.py
+fi
+
+# 8. Register Zed (if installed)
+if [ -d "$HOME/.config/zed" ]; then
+    python3 scripts/install_zed.py
+fi
+
+# 9. Print success
 echo ""
 echo "PrePrompt installed successfully."
 echo ""
-echo "Restart Claude Code and Cursor to activate."
+echo "Restart Claude Code, Cursor, Windsurf, or Zed to activate."
 echo "Test with: preprompt-test-classifier"
