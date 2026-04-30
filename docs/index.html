@@ -969,9 +969,9 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     gap: 16px;
   }
 
-  /* ASCII annotation box — allow horizontal scroll, not clip */
+  /* ASCII annotation box — narrow enough to fit without scroll */
   .ascii-wrap {
-    overflow-x: auto !important;
+    overflow-x: hidden !important;
     overflow-y: hidden !important;
     width: 100% !important;
     max-width: 100% !important;
@@ -979,8 +979,9 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
   .ascii-box {
     font-size: 10px !important;
     white-space: pre !important;
-    overflow-x: auto !important;
-    -webkit-overflow-scrolling: touch !important;
+    overflow-x: hidden !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
   /* Hero right column — must not clip its child */
@@ -1133,18 +1134,19 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             <span className="cd" /><span className="cd" /><span className="cd" />
             <span className="ascii-chrome-title">claude-code · stderr</span>
           </div>
-          <pre className="ascii-box" aria-label="terminal annotation">{`╔═ preprompt  `}<span className="ansi-yellow">+58</span>{` ═══════════════════════════════════════════╗
-║ The rewritten prompt specifies the technical              ║
-║ implementation details, clarifies the workflow, and adds  ║
-║ concrete error scenarios relevant to FastAPI apps.        ║
-╠═══════════════════════════════════════════════════════════╣
-║ `}<span className="ansi-dim">ORIGINAL</span>{`  write a function that handles youtube oauth t… ║
-║ `}<span className="ansi-yellow">OPTIMIZED</span>{` Write a Python function for FastAPI that       ║
-║           handles YouTube OAuth 2.0 token refresh. The    ║
-║           function should: (1) detect expired credentials ║
-║           by checking the expiry timestamp, (2) use the   ║
-║           refresh token to obtain a new access token…     ║
-╚═══════════════════════════════════════════════════════════╝`}</pre>
+          <pre className="ascii-box" aria-label="terminal annotation">{`╔═ preprompt  `}<span className="ansi-yellow">+58</span>{` ═══════════════════╗
+║ Specifies technical details,    ║
+║ clarifies workflow, adds error  ║
+║ scenarios for FastAPI apps.     ║
+╠═════════════════════════════════╣
+║ `}<span className="ansi-dim">ORIG</span>{` write a function that… ║
+║ `}<span className="ansi-yellow">OPT</span>{`  Write a Python function ║
+║      for FastAPI that handles   ║
+║      YouTube OAuth 2.0 token    ║
+║      refresh with error         ║
+║      handling for expired       ║
+║      credentials…               ║
+╚═════════════════════════════════╝`}</pre>
         </div>
       );
     }
