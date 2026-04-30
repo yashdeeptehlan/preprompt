@@ -45,6 +45,8 @@ cli/
                    clip (cross-platform clipboard optimizer), optimize,
                    feedback (accept/reject rating), install (one-command setup),
                    update, update-context
+                   stats_cmd/history_cmd call maybe_run_setup() on first run
+  setup.py       — first-run API key wizard (maybe_run_setup())
   watch.py       — preprompt-watch: auto-flushes sidecars on startup, live tail of ~/.preprompt/activity.log
 
 .claude/
@@ -102,6 +104,7 @@ tests/
 - Phase 8b: flush sidecars runs memory extraction (Claude Code → stack memory), watch auto-flushes on startup
 - Phase 8c: preprompt-update command, version check on stats/history startup, version in stats header
 - Phase 9: accept/reject feedback tracking, preprompt-install one-command setup, preprompt-feedback CLI, cross-platform clipboard, faster memory (0.85/0.03), landing page prerequisites block
+- Phase 9b: Beehiiv beta signup on landing, first-run API key wizard (cli/setup.py), fix version comparison (tuple sort not string eq)
 
 ## Runtime files
 - ~/.preprompt/history.db     — SQLite WAL database

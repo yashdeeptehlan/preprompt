@@ -1116,6 +1116,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             <a href="#classifier">classifier</a>
             <a href="#memory">memory</a>
             <a href="#install">install</a>
+            <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" style={{color: "var(--accent-ink)", fontWeight: 600}}>join beta</a>
             <a href="https://github.com/yashdeeptehlan/preprompt" className="nav-gh">
               <span className="nav-gh-dot" /> github
             </a>
@@ -1556,6 +1557,74 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       );
     }
 
+    /* ── Beta signup ── */
+    function Beta() {
+      return (
+        <section id="beta" style={{
+          background: "linear-gradient(135deg, oklch(0.35 0.12 295) 0%, oklch(0.25 0.14 310) 100%)",
+          padding: "72px var(--shell-x)",
+          textAlign: "center",
+        }}>
+          <div style={{maxWidth: "600px", margin: "0 auto"}}>
+            <div style={{fontFamily: "var(--mono)", fontSize: "11px", letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(255,255,255,0.5)", marginBottom: "16px"}}>
+              early access
+            </div>
+            <h2 style={{fontFamily: "var(--mono)", fontSize: "clamp(24px,4vw,36px)", fontWeight: 700, color: "#fff", marginBottom: "12px", lineHeight: 1.2}}>
+              Get updates as PrePrompt evolves
+            </h2>
+            <p style={{color: "rgba(255,255,255,0.6)", fontSize: "15px", marginBottom: "32px", fontFamily: "var(--sans)"}}>
+              New releases, tips, and what's coming next. No noise.
+            </p>
+            <div style={{display: "flex", flexDirection: "column", gap: "12px", maxWidth: "440px", margin: "0 auto", position: "relative", zIndex: 10}}>
+              <div style={{display: "flex", gap: "10px", flexWrap: "wrap", justifyContent: "center"}}>
+                <input
+                  id="email-input"
+                  type="email"
+                  placeholder="Enter your email"
+                  style={{
+                    flex: "1 1 200px", minWidth: "180px",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.2)",
+                    borderRadius: "10px",
+                    padding: "12px 18px",
+                    color: "#fff",
+                    fontFamily: "var(--mono)",
+                    fontSize: "13px",
+                    outline: "none",
+                  }}
+                />
+                <a
+                  id="beta-join-btn"
+                  href="https://preprompt.beehiiv.com/subscribe"
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => appendEmail()}
+                  style={{
+                    background: "#fff",
+                    color: "oklch(0.35 0.12 295)",
+                    padding: "12px 24px",
+                    borderRadius: "10px",
+                    fontFamily: "var(--mono)",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    textDecoration: "none",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Join Beta
+                </a>
+              </div>
+              <p style={{color: "rgba(200,180,255,0.5)", fontSize: "11px", fontFamily: "var(--mono)"}}>
+                No spam. Unsubscribe anytime.
+              </p>
+            </div>
+          </div>
+        </section>
+      );
+    }
+
+
     /* ── Footer ── */
     function Footer() {
       return (
@@ -1591,9 +1660,18 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           <Architecture />
           <Cost />
           <Install />
+          <Beta />
           <Footer />
         </>
       );
+    }
+
+    function appendEmail() {
+      const email = document.getElementById('email-input')?.value?.trim();
+      const btn = document.getElementById('beta-join-btn');
+      if (email && btn) {
+        btn.href = 'https://preprompt.beehiiv.com/subscribe?email=' + encodeURIComponent(email);
+      }
     }
 
     ReactDOM.createRoot(document.getElementById('app')).render(<App />);

@@ -30,6 +30,7 @@ preprompt-optimize --raw "prompt"        # prints optimized text only
 preprompt-watch                          # live tail of ~/.preprompt/activity.log
 preprompt-clip                           # read clipboard, optimize, write back (macOS)
 preprompt-feedback                       # rate recent optimizations (builds accept/reject stats)
+# Note: stats and history auto-run first-time API key wizard via cli/setup.py
 preprompt-install                        # one-command setup (API key + hooks)
 preprompt-update                         # upgrade to latest PyPI version + re-register hooks
 preprompt-update-context

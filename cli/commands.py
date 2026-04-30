@@ -54,6 +54,13 @@ def _open_db() -> sqlite3.Connection:
 
 # ── Version check ────────────────────────────────────────────────────────────
 
+def _parse_version(v: str) -> tuple:
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0,)
+
+
 def _check_for_updates() -> None:
     """Silently check PyPI for newer version. Print notice if behind."""
     try:
@@ -64,7 +71,7 @@ def _check_for_updates() -> None:
         req = urllib.request.Request(url, headers={"User-Agent": "preprompt-cli"})
         with urllib.request.urlopen(req, timeout=2) as r:
             latest = json.loads(r.read())["info"]["version"]
-        if latest != current:
+        if _parse_version(latest) > _parse_version(current):
             print(f"  ⚡ PrePrompt {latest} available (you have {current})")
             print(f"     Run: preprompt-update")
             print()
@@ -75,6 +82,8 @@ def _check_for_updates() -> None:
 # ── preprompt-history ────────────────────────────────────────────────────────
 
 def history_cmd() -> None:
+    from cli.setup import maybe_run_setup
+    maybe_run_setup()
     _check_for_updates()
     parser = argparse.ArgumentParser(
         prog="preprompt-history",
@@ -122,6 +131,8 @@ def history_cmd() -> None:
 # ── preprompt-stats ──────────────────────────────────────────────────────────
 
 def stats_cmd() -> None:
+    from cli.setup import maybe_run_setup
+    maybe_run_setup()
     _check_for_updates()
     from storage.db import flush_pending_hook_events
     flush_pending_hook_events()
