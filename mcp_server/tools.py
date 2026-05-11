@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from mcp_server.classifier import classify_prompt, OPTIMIZATION_THRESHOLD
+from mcp_server.classifier import classify_prompt, route_prompt, OPTIMIZATION_THRESHOLD
 from mcp_server.optimizer import optimize
 from mcp_server.extractor import update_memory_from_prompt
 from storage.db import (
@@ -13,6 +13,25 @@ from storage.db import (
 )
 
 mcp = FastMCP("PrePrompt")
+
+_CLARIFY_TEMPLATES = {
+    "target area": (
+        "What specifically should be improved: UI/UX, performance, code quality, "
+        "accessibility, or architecture?"
+    ),
+    "desired outcome": "What should the end result look like?",
+    "scope boundary": "Should this be a minimal targeted fix or a broader refactor?",
+    "target file or component": (
+        "Which file, component, or function should this apply to?"
+    ),
+}
+
+
+def _clarifying_question(missing_context: list) -> str:
+    for ctx in missing_context:
+        if ctx in _CLARIFY_TEMPLATES:
+            return _CLARIFY_TEMPLATES[ctx]
+    return "What specifically do you want changed, and what should the result look like?"
 
 # Stable session identity: one session per hostname per calendar day.
 # Kept as a module-level alias so existing tests can import _SESSION_ID.
@@ -45,18 +64,54 @@ def optimize_prompt(
       reason           : str   — brief explanation of what changed (or why not)
     """
     flush_pending_hook_events()
-    score = classify_prompt(user_prompt, conversation_history, turn_number)
+    routing = route_prompt(user_prompt, conversation_history, turn_number)
+    route = routing["route"]
+    score = routing["quality_score"]
 
-    if score >= OPTIMIZATION_THRESHOLD:
-        result = optimize(user_prompt, conversation_history)
-        optimized = result["optimized_prompt"]
-        was_intercepted = optimized != user_prompt
-        reason = result["reason"]
-    else:
-        optimized = user_prompt
-        was_intercepted = False
-        reason = f"Score {score} below threshold {OPTIMIZATION_THRESHOLD}; prompt is clear enough."
+    if route == "clarify":
+        question = _clarifying_question(routing.get("missing_context", []))
+        save_prompt_event(
+            original_prompt=user_prompt,
+            optimized_prompt=user_prompt,
+            classifier_score=score,
+            was_intercepted=False,
+            turn_number=turn_number,
+            session_id=get_or_create_session(),
+            route="clarify",
+        )
+        update_memory_from_prompt(user_prompt, conversation_history)
+        return {
+            "optimized_prompt": user_prompt,
+            "was_intercepted": False,
+            "score": score,
+            "route": "clarify",
+            "reason": routing["reason"],
+            "clarifying_question": question,
+        }
 
+    if route == "pass":
+        save_prompt_event(
+            original_prompt=user_prompt,
+            optimized_prompt=user_prompt,
+            classifier_score=score,
+            was_intercepted=False,
+            turn_number=turn_number,
+            session_id=get_or_create_session(),
+            route="pass",
+        )
+        update_memory_from_prompt(user_prompt, conversation_history)
+        return {
+            "optimized_prompt": user_prompt,
+            "was_intercepted": False,
+            "score": score,
+            "route": "pass",
+            "reason": routing["reason"],
+        }
+
+    # route == "enrich"
+    result = optimize(user_prompt, conversation_history)
+    optimized = result["optimized_prompt"]
+    was_intercepted = optimized != user_prompt
     save_prompt_event(
         original_prompt=user_prompt,
         optimized_prompt=optimized,
@@ -64,15 +119,15 @@ def optimize_prompt(
         was_intercepted=was_intercepted,
         turn_number=turn_number,
         session_id=get_or_create_session(),
+        route="enrich",
     )
-
     update_memory_from_prompt(user_prompt, conversation_history)
-
     return {
         "optimized_prompt": optimized,
         "was_intercepted": was_intercepted,
         "score": score,
-        "reason": reason,
+        "route": "enrich",
+        "reason": result["reason"],
     }
 
 

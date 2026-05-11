@@ -139,11 +139,12 @@ def test_optimize_prompt_return_shape(mock_cls):
         turn_number=2,
     )
 
-    assert set(result.keys()) == {"optimized_prompt", "was_intercepted", "score", "reason"}
+    assert set(result.keys()) >= {"optimized_prompt", "was_intercepted", "score", "reason", "route"}
     assert isinstance(result["optimized_prompt"], str)
     assert isinstance(result["was_intercepted"], bool)
     assert isinstance(result["score"], int)
     assert isinstance(result["reason"], str)
+    assert result["route"] in {"pass", "enrich", "clarify"}
 
 
 # ── Phase 3: stack extractor tests ───────────────────────────────────────────

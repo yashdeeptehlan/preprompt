@@ -49,6 +49,11 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         conn.commit()
     except sqlite3.OperationalError:
         pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE prompt_history ADD COLUMN route TEXT DEFAULT 'enrich'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.execute("""
         CREATE TABLE IF NOT EXISTS stack_memory (
             id           TEXT PRIMARY KEY,
@@ -143,6 +148,7 @@ def save_prompt_event(
     was_intercepted: bool,
     turn_number: int,
     session_id: str,
+    route: str = "enrich",
 ) -> str:
     """Insert a prompt event and return its generated id."""
     event_id = str(uuid.uuid4())
@@ -150,8 +156,8 @@ def save_prompt_event(
     conn.execute("""
         INSERT INTO prompt_history
             (id, timestamp, original_prompt, optimized_prompt,
-             classifier_score, was_intercepted, turn_number, session_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             classifier_score, was_intercepted, turn_number, session_id, route)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         event_id,
         _now(),
@@ -161,6 +167,7 @@ def save_prompt_event(
         1 if was_intercepted else 0,
         turn_number,
         session_id,
+        route,
     ])
     conn.commit()
     return event_id

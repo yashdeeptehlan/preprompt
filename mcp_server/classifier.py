@@ -28,6 +28,56 @@ _CONVERSATIONAL = {
 
 OPTIMIZATION_THRESHOLD = 38
 
+# ── Route-layer constants ──────────────────────────────────────────────────────
+
+_VAGUE_ACTION_VERBS = frozenset({
+    "make", "fix", "improve", "update", "change", "do", "help", "clean", "sort",
+})
+
+_MULTI_WORD_VAGUE_PHRASES = frozenset({
+    "make it", "make this", "make that",
+    "make it better", "make this better", "make that better",
+    "make it work", "make this work",
+    "fix it", "fix this", "fix that",
+    "improve it", "improve this", "improve that",
+    "clean up", "sort out", "help me", "do this", "do that",
+})
+
+_QUESTION_STARTERS = frozenset({
+    "what", "how", "why", "when", "where", "is", "does", "can", "should",
+})
+
+_GENERIC_OBJECTS = frozenset({
+    "it", "this", "that", "them", "things", "everything", "stuff",
+    "bug", "issue", "error", "problem", "code", "file", "thing",
+})
+
+
+def _check_clarify(lower: str, words: list, score: int) -> tuple:
+    """Return (is_clarify: bool, missing_context: list[str])."""
+    word_count = len(words)
+
+    # Exact match with known vague multi-word phrases
+    if lower.strip() in _MULTI_WORD_VAGUE_PHRASES:
+        return True, ["target area", "desired outcome"]
+
+    # Rule 1: under 4 words AND score >= threshold
+    if word_count < 4 and score >= OPTIMIZATION_THRESHOLD:
+        return True, ["target area", "desired outcome"]
+
+    # Rule 2: short prompt (≤5 words) with vague verb + generic/no object
+    if word_count <= 5 and words and words[0] in _VAGUE_ACTION_VERBS:
+        meaningful = [w for w in words[1:] if w not in {"the", "a", "an", "my", "our", "your"}]
+        if not meaningful:
+            return True, ["target area", "desired outcome"]
+        if len(meaningful) <= 2 and all(w in _GENERIC_OBJECTS for w in meaningful):
+            has_bug_word = any(w in {"bug", "issue", "error", "problem"} for w in meaningful)
+            missing = ["target file or component", "desired outcome"] if has_bug_word \
+                else ["target area", "desired outcome"]
+            return True, missing
+
+    return False, []
+
 
 def classify_prompt(prompt: str, history: list, turn: int) -> int:
     """Score *prompt* from 0–100; higher = more benefit from optimization.
@@ -96,3 +146,66 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
         score += 15
 
     return score
+
+
+def route_prompt(prompt: str, history: list, turn: int) -> dict:
+    """Return routing decision for a prompt.
+
+    Does NOT make API calls — pure heuristics only.
+
+    Returns dict with keys:
+      route            : "pass" | "enrich" | "clarify"
+      quality_score    : int (same as classify_prompt output)
+      intent_confidence: int (0-100, heuristic estimate)
+      risk_level       : "low" | "medium" | "high"
+      reason           : str (one sentence)
+      missing_context  : list[str] (empty if route != "clarify")
+    """
+    score = classify_prompt(prompt, history, turn)
+    lower = prompt.lower().strip()
+    words = lower.split()
+    word_count = len(words)
+
+    # ── CLARIFY check (evaluated before threshold) ────────────────────────
+    is_clarify, missing_context = _check_clarify(lower, words, score)
+    if is_clarify:
+        return {
+            "route": "clarify",
+            "quality_score": score,
+            "intent_confidence": 25 if word_count < 4 else 30,
+            "risk_level": "high" if word_count <= 3 else "medium",
+            "reason": "Prompt is too vague to optimize safely without risking scope expansion.",
+            "missing_context": missing_context,
+        }
+
+    # ── PASS check ────────────────────────────────────────────────────────
+    is_question = bool(words and words[0] in _QUESTION_STARTERS)
+    if score < OPTIMIZATION_THRESHOLD or (is_question and score < 50):
+        return {
+            "route": "pass",
+            "quality_score": score,
+            "intent_confidence": 90 if is_question else 80,
+            "risk_level": "low",
+            "reason": (
+                f"Score {score} is below threshold {OPTIMIZATION_THRESHOLD}; "
+                "prompt is clear enough."
+            ),
+            "missing_context": [],
+        }
+
+    # ── ENRICH ────────────────────────────────────────────────────────────
+    if word_count > 12:
+        conf = 75
+    elif word_count > 7:
+        conf = 65
+    else:
+        conf = 60
+
+    return {
+        "route": "enrich",
+        "quality_score": score,
+        "intent_confidence": conf,
+        "risk_level": "medium" if score < 60 else "low",
+        "reason": "Prompt can be enriched with more technical specificity and context.",
+        "missing_context": [],
+    }
