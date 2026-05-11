@@ -52,6 +52,26 @@ _GENERIC_OBJECTS = frozenset({
     "bug", "issue", "error", "problem", "code", "file", "thing",
 })
 
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "with",
+    "that", "this", "be", "by", "or", "and", "but", "not", "from",
+    "as", "into", "about",
+})
+
+_CLEAR_ACTION_VERBS = frozenset({
+    "implement", "refactor", "migrate", "deploy", "configure", "integrate",
+    "optimize", "debug", "test", "write", "create", "build", "add", "remove",
+    "delete", "update", "fix",
+})
+
+
+def _has_technical_noun(words: list) -> bool:
+    """True if any word is longer than 4 chars, not a generic object, not a stop word."""
+    return any(
+        len(w) > 4 and w not in _GENERIC_OBJECTS and w not in _STOP_WORDS
+        for w in words
+    )
+
 
 def _check_clarify(lower: str, words: list, score: int) -> tuple:
     """Return (is_clarify: bool, missing_context: list[str])."""
@@ -61,8 +81,8 @@ def _check_clarify(lower: str, words: list, score: int) -> tuple:
     if lower.strip() in _MULTI_WORD_VAGUE_PHRASES:
         return True, ["target area", "desired outcome"]
 
-    # Rule 1: under 4 words AND score >= threshold
-    if word_count < 4 and score >= OPTIMIZATION_THRESHOLD:
+    # Rule 1: under 4 words AND score >= threshold AND no specific technical noun
+    if word_count < 4 and score >= OPTIMIZATION_THRESHOLD and not _has_technical_noun(words):
         return True, ["target area", "desired outcome"]
 
     # Rule 2: short prompt (≤5 words) with vague verb + generic/no object
@@ -84,25 +104,30 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
 
     Scoring breakdown
     -----------------
-    High weight (up to 25 pts each):
+    Positive (up to 25 pts each):
       • Ambiguity markers (vague verbs)
       • Multi-requirement density ("and", comma-separated tasks)
-
-    Medium weight (up to 15 pts each):
-      • Turn depth (turns 3+ add points)
-      • Output-format ambiguity (code task with no format hint)
+      • Specific technical noun present (+25)
+      • Clear action verb + specific object, 2-6 words (+15)
+      • Turn depth (turns 3+ add points, up to 15)
+      • Code task without format hint (+15)
 
     Negative signals:
-      • Prompt < 6 words            : -20
+      • < 4 words with no code task and no technical noun: -20
       • Starts with "what is/does/are": -15
-      • Already has numbered steps
-        or explicit output format   : -15
-      • Conversational opener       : -25
+      • Already structured (numbered steps or explicit format): -15
+      • Conversational opener: -25
     """
     score = 0
     lower = prompt.lower().strip()
     words = lower.split()
     word_count = len(words)
+
+    # Compute these first — needed by the conditional short-prompt penalty
+    has_numbered_steps = bool(re.search(r"(?:^|\s)\d+\.\s", prompt))
+    has_explicit_format = any(kw in lower for kw in _FORMAT_KEYWORDS)
+    has_code_task = any(kw in lower for kw in _CODE_KEYWORDS)
+    has_tech_noun = _has_technical_noun(words)
 
     # ── Negative signals ──────────────────────────────────────────────────────
 
@@ -110,8 +135,8 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
     if words and words[0] in _CONVERSATIONAL:
         score -= 25
 
-    # Very short prompt
-    if word_count < 6:
+    # Short penalty: only when truly bare (< 4 words, no code keyword, no tech noun)
+    if word_count < 4 and not has_code_task and not has_tech_noun:
         score -= 20
 
     # Pure lookup / definition question
@@ -119,8 +144,6 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
         score -= 15
 
     # Already structured: numbered list OR explicit format keyword present
-    has_numbered_steps = bool(re.search(r"(?:^|\s)\d+\.\s", prompt))
-    has_explicit_format = any(kw in lower for kw in _FORMAT_KEYWORDS)
     if has_numbered_steps or has_explicit_format:
         score -= 15
 
@@ -130,7 +153,7 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
     ambiguity_hits = sum(1 for v in _AMBIGUITY_VERBS if v in lower)
     score += min(ambiguity_hits * 25, 25)
 
-    # 2. Multi-requirement density (up to 25 pts)
+    # 2. Multi-requirement density (up to 30 pts)
     and_count = lower.count(" and ")
     comma_count = lower.count(",")
     multi_hits = and_count + comma_count
@@ -140,9 +163,16 @@ def classify_prompt(prompt: str, history: list, turn: int) -> int:
     if turn >= 3:
         score += min((turn - 2) * 5, 15)
 
-    # 4. Output-format ambiguity (up to 15 pts): code task with no format hint
-    has_code_task = any(kw in lower for kw in _CODE_KEYWORDS)
+    # 4. Code task without format hint (+15)
     if has_code_task and not has_explicit_format:
+        score += 15
+
+    # 5. Specific technical noun present (+25)
+    if has_tech_noun:
+        score += 25
+
+    # 6. Clear action verb with specific technical object, short prompt (+15)
+    if 2 <= word_count <= 6 and words and words[0] in _CLEAR_ACTION_VERBS and has_tech_noun:
         score += 15
 
     return score
