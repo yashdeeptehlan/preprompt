@@ -46,6 +46,20 @@ def _render_annotation(score: int, reason: str, original: str, optimized: str) -
     return "\n".join([header] + reason_lines + [sep, orig_line] + opt_lines + [footer])
 
 
+def _render_clarify_annotation(score: int, question: str, original: str) -> str:
+    import textwrap
+    prefix = f"╔═ PrePrompt CLARIFY "
+    header = prefix + "═" * (_WIDTH - len(prefix) - 1) + "╗"
+    sep = "╠" + "═" * (_WIDTH - 2) + "╣"
+    q_wrapped = textwrap.wrap(f"? {question}", _INNER) or [question[:_INNER]]
+    q_lines = [_box_line(line) for line in q_wrapped]
+    orig_text = original if len(original) <= _TEXT_W else original[:_TEXT_W - 3] + "..."
+    orig_line = _box_line(f"PROMPT    {orig_text}")
+    info_line = _box_line("PrePrompt is asking for clarification first.")
+    footer = "╚" + "═" * (_WIDTH - 2) + "╝"
+    return "\n".join([header] + [info_line] + [sep] + q_lines + [sep, orig_line] + [footer])
+
+
 def _log_activity(score: int, was_intercepted: bool, original: str, optimized: str, reason: str) -> None:
     import datetime
     log_path = Path.home() / ".preprompt" / "activity.log"
@@ -62,7 +76,7 @@ def _log_activity(score: int, was_intercepted: bool, original: str, optimized: s
         f.write(line)
 
 
-def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: bool, turn_number: int) -> None:
+def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: bool, turn_number: int, route: str = "enrich") -> None:
     sidecar = {
         "original_prompt": prompt,
         "optimized_prompt": optimized,
@@ -70,6 +84,7 @@ def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: boo
         "was_intercepted": was_intercepted,
         "turn_number": turn_number,
         "timestamp": time.time(),
+        "route": route,
     }
     sidecar_dir = Path.home() / ".preprompt" / "pending"
     sidecar_dir.mkdir(parents=True, exist_ok=True)
@@ -98,12 +113,51 @@ def main() -> None:
         from dotenv import load_dotenv
         load_dotenv(Path.home() / ".preprompt" / ".env")
 
-        from mcp_server.classifier import classify_prompt, OPTIMIZATION_THRESHOLD
+        from mcp_server.classifier import route_prompt
+        routing = route_prompt(prompt, history, turn)
+        route = routing["route"]
+        score = routing["quality_score"]
 
-        score = classify_prompt(prompt, history, turn)
-
-        if score < OPTIMIZATION_THRESHOLD:
+        if route == "pass":
             passthrough()
+            sys.exit(0)
+
+        if route == "clarify":
+            question = routing.get("missing_context", [])
+            _CLARIFY_TEMPLATES = {
+                "target area": "What specifically should be improved: UI/UX, performance, code quality, accessibility, or architecture?",
+                "desired outcome": "What should the end result look like?",
+                "scope boundary": "Should this be a minimal targeted fix or a broader refactor?",
+                "target file or component": "Which file, component, or function should this apply to?",
+            }
+            clarifying_q = None
+            for ctx in question:
+                if ctx in _CLARIFY_TEMPLATES:
+                    clarifying_q = _CLARIFY_TEMPLATES[ctx]
+                    break
+            if not clarifying_q:
+                clarifying_q = "What specifically do you want changed, and what should the result look like?"
+
+            print(_render_clarify_annotation(score, clarifying_q, prompt), file=sys.stderr)
+
+            clarified_prompt = (
+                f"Before answering, ask the user this clarifying question and wait "
+                f"for their response before proceeding:\n\n"
+                f"\"{clarifying_q}\"\n\n"
+                f"Original request: {prompt}"
+            )
+
+            try:
+                _write_sidecar(prompt, prompt, score, False, turn, route="clarify")
+            except Exception:
+                pass
+
+            try:
+                _log_activity(score, False, prompt, prompt, f"[CLARIFY] {clarifying_q}")
+            except Exception:
+                pass
+
+            print(json.dumps({"prompt": clarified_prompt}))
             sys.exit(0)
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -123,7 +177,7 @@ def main() -> None:
         was_intercepted: bool = optimized != prompt
 
         try:
-            _write_sidecar(prompt, optimized, score, was_intercepted, turn)
+            _write_sidecar(prompt, optimized, score, was_intercepted, turn, route="enrich")
         except Exception as sidecar_err:
             print(f"[PrePrompt] Sidecar write failed: {sidecar_err}", file=sys.stderr)
 
