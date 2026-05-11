@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PrePrompt Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:      #f7f3ee;
+    --card:    #fff9f2;
+    --ink:     #2a2520;
+    --ink2:    #5a534c;
+    --amber:   #c49a3c;
+    --amber2:  #e8c06a;
+    --border:  #ddd8d0;
+    --green:   #4a7c59;
+    --red:     #9e3a3a;
+    --mono:    'JetBrains Mono', monospace;
+    --sans:    'Inter Tight', sans-serif;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--ink);
+    min-height: 100vh;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  header {
+    background: var(--ink);
+    color: var(--bg);
+    padding: 0 24px;
+    height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 2px solid var(--amber);
+  }
+
+  header h1 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  header h1 span { color: var(--amber); }
+
+  #refresh-info {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: #aaa;
+  }
+
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 24px 20px 48px;
+  }
+
+  /* ── Stats strip ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-card .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink2);
+  }
+
+  .stat-card .value {
+    font-family: var(--mono);
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--ink);
+    line-height: 1.1;
+  }
+
+  .stat-card .sub {
+    font-size: 11px;
+    color: var(--ink2);
+  }
+
+  .stat-card.accent { border-left: 3px solid var(--amber); }
+  .stat-card.green  { border-left: 3px solid var(--green); }
+
+  /* ── Two-col layout ── */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 720px) {
+    .two-col { grid-template-columns: 1fr; }
+  }
+
+  /* ── Panel ── */
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .panel-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg);
+  }
+
+  .panel-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink2);
+  }
+
+  .panel-body { padding: 16px; }
+
+  /* ── Chart container ── */
+  .chart-wrap {
+    position: relative;
+    height: 200px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .chart-wrap canvas { max-height: 200px; }
+
+  /* ── Route legend ── */
+  .route-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 8px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-label { flex: 1; }
+  .legend-count { font-family: var(--mono); font-weight: 600; }
+  .legend-pct   { font-family: var(--mono); font-size: 11px; color: var(--ink2); }
+
+  /* ── History table ── */
+  .history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .history-table th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink2);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+  }
+
+  .history-table td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 11px;
+    vertical-align: top;
+  }
+
+  .history-table tr:last-child td { border-bottom: none; }
+  .history-table tr:hover td { background: #fdf8f0; }
+
+  .history-scroll {
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .badge-enrich  { background: #fef3c7; color: #92400e; }
+  .badge-pass    { background: #e0f2fe; color: #0369a1; }
+  .badge-clarify { background: #ede9fe; color: #5b21b6; }
+  .badge-yes     { background: #d1fae5; color: #065f46; }
+  .badge-no      { background: #fee2e2; color: #991b1b; }
+
+  /* ── Memory table ── */
+  .memory-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr auto auto;
+    gap: 0;
+  }
+
+  .memory-row {
+    display: contents;
+  }
+
+  .memory-row > div {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-family: var(--mono);
+  }
+
+  .memory-row > div:first-child { color: var(--ink2); font-size: 11px; }
+
+  .conf-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .conf-bar {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .conf-fill {
+    height: 100%;
+    background: var(--amber);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  .conf-pct {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink2);
+    width: 36px;
+    text-align: right;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--ink2);
+    font-size: 13px;
+  }
+
+  .empty-state .hint {
+    margin-top: 6px;
+    font-size: 11px;
+    font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Pre<span>Prompt</span> Dashboard</h1>
+  <span id="refresh-info">Loading…</span>
+</header>
+
+<main>
+
+  <!-- Stats strip -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card accent">
+      <span class="label">Total Prompts</span>
+      <span class="value" id="stat-total">—</span>
+      <span class="sub" id="stat-sessions">— sessions</span>
+    </div>
+    <div class="stat-card accent">
+      <span class="label">Intercepted</span>
+      <span class="value" id="stat-intercepted">—</span>
+      <span class="sub" id="stat-pct">—% of total</span>
+    </div>
+    <div class="stat-card">
+      <span class="label">Avg Score</span>
+      <span class="value" id="stat-score">—</span>
+      <span class="sub">threshold: 38</span>
+    </div>
+    <div class="stat-card green">
+      <span class="label">Accept Rate</span>
+      <span class="value" id="stat-accept">—</span>
+      <span class="sub" id="stat-feedback">no feedback yet</span>
+    </div>
+  </div>
+
+  <!-- Route breakdown + accept/reject -->
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Route Breakdown</span>
+      </div>
+      <div class="panel-body" style="display:flex;align-items:center;gap:24px;">
+        <div class="chart-wrap" style="width:160px;flex-shrink:0;">
+          <canvas id="route-chart"></canvas>
+        </div>
+        <div class="route-legend" id="route-legend">
+          <span style="color:var(--ink2);font-size:12px;">Loading…</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Accept / Reject</span>
+      </div>
+      <div class="panel-body" style="display:flex;align-items:center;gap:24px;">
+        <div class="chart-wrap" style="width:160px;flex-shrink:0;">
+          <canvas id="feedback-chart"></canvas>
+        </div>
+        <div class="route-legend" id="feedback-legend">
+          <span style="color:var(--ink2);font-size:12px;">Loading…</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prompt history -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Recent Prompts</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink2);cursor:pointer;">
+        <input type="checkbox" id="intercepted-only"> Intercepted only
+      </label>
+    </div>
+    <div class="history-scroll">
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th style="width:80px">Time</th>
+            <th style="width:52px">Score</th>
+            <th style="width:64px">Route</th>
+            <th style="width:60px">Optimized</th>
+            <th>Original prompt</th>
+          </tr>
+        </thead>
+        <tbody id="history-body">
+          <tr><td colspan="5" style="text-align:center;padding:20px;color:var(--ink2);">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Stack memory -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="panel-title">Stack Memory</span>
+      <span id="memory-count" style="font-size:11px;color:var(--ink2);">—</span>
+    </div>
+    <div id="memory-body" class="panel-body" style="padding:0;">
+      <div class="empty-state">Loading…</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  const API = 'http://localhost:7777';
+  let routeChart = null, feedbackChart = null;
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function relTime(iso) {
+    const dt = new Date(iso);
+    const s = Math.floor((Date.now() - dt) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s/60)}m ago`;
+    if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+    return `${Math.floor(s/86400)}d ago`;
+  }
+
+  function trunc(str, n) {
+    if (!str) return '';
+    return str.length > n ? str.slice(0, n - 3) + '…' : str;
+  }
+
+  function badge(cls, text) {
+    return `<span class="badge badge-${cls}">${text}</span>`;
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+
+  async function loadStats() {
+    const r = await fetch(`${API}/api/stats`);
+    const d = await r.json();
+    document.getElementById('stat-total').textContent = d.total;
+    document.getElementById('stat-sessions').textContent = `${d.sessions} session${d.sessions !== 1 ? 's' : ''}`;
+    document.getElementById('stat-intercepted').textContent = d.intercepted;
+    document.getElementById('stat-pct').textContent = `${d.intercepted_pct}% of total`;
+    document.getElementById('stat-score').textContent = d.avg_score;
+    document.getElementById('stat-accept').textContent = d.accept_rate !== null ? `${d.accept_rate}%` : '—';
+    document.getElementById('stat-feedback').textContent =
+      d.accept_rate !== null
+        ? `${d.kept} kept / ${d.rejected} rejected`
+        : 'no feedback yet';
+    return d;
+  }
+
+  // ── Route chart ────────────────────────────────────────────────────────────
+
+  async function loadRoutes() {
+    const r = await fetch(`${API}/api/routes`);
+    const d = await r.json();
+    const total = d.total || 1;
+    const colors = { enrich: '#c49a3c', pass: '#60a5fa', clarify: '#a78bfa' };
+    const labels = ['enrich', 'pass', 'clarify'];
+    const counts = labels.map(l => d[l] || 0);
+
+    const legendEl = document.getElementById('route-legend');
+    legendEl.innerHTML = labels.map((l, i) => `
+      <div class="legend-item">
+        <div class="legend-dot" style="background:${colors[l]}"></div>
+        <span class="legend-label">${l}</span>
+        <span class="legend-count">${counts[i]}</span>
+        <span class="legend-pct">${Math.round(counts[i]/total*100)}%</span>
+      </div>
+    `).join('');
+
+    const ctx = document.getElementById('route-chart').getContext('2d');
+    if (routeChart) routeChart.destroy();
+    routeChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels,
+        datasets: [{
+          data: counts,
+          backgroundColor: labels.map(l => colors[l]),
+          borderWidth: 2,
+          borderColor: '#fff9f2',
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        cutout: '65%',
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+  }
+
+  // ── Feedback chart ─────────────────────────────────────────────────────────
+
+  async function loadFeedback(stats) {
+    const kept = stats.kept || 0;
+    const rejected = stats.rejected || 0;
+    const legendEl = document.getElementById('feedback-legend');
+
+    if (!kept && !rejected) {
+      legendEl.innerHTML = `<div style="color:var(--ink2);font-size:12px;">No feedback yet.<br><span style="font-size:11px;font-family:var(--mono);">Run preprompt-feedback</span></div>`;
+      const ctx = document.getElementById('feedback-chart').getContext('2d');
+      if (feedbackChart) feedbackChart.destroy();
+      feedbackChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['no data'],
+          datasets: [{ data: [1], backgroundColor: ['#ddd8d0'], borderWidth: 0 }]
+        },
+        options: { plugins: { legend: { display: false } }, cutout: '65%', responsive: true, maintainAspectRatio: false }
+      });
+      return;
+    }
+
+    legendEl.innerHTML = `
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#4a7c59"></div>
+        <span class="legend-label">kept</span>
+        <span class="legend-count">${kept}</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#9e3a3a"></div>
+        <span class="legend-label">rejected</span>
+        <span class="legend-count">${rejected}</span>
+      </div>
+    `;
+
+    const ctx = document.getElementById('feedback-chart').getContext('2d');
+    if (feedbackChart) feedbackChart.destroy();
+    feedbackChart = new Chart(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: ['kept', 'rejected'],
+        datasets: [{
+          data: [kept, rejected],
+          backgroundColor: ['#4a7c59', '#9e3a3a'],
+          borderWidth: 2,
+          borderColor: '#fff9f2',
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        cutout: '65%',
+        responsive: true,
+        maintainAspectRatio: false,
+      }
+    });
+  }
+
+  // ── History ────────────────────────────────────────────────────────────────
+
+  async function loadHistory() {
+    const interceptedOnly = document.getElementById('intercepted-only').checked;
+    const url = `${API}/api/history?limit=50${interceptedOnly ? '&intercepted_only=true' : ''}`;
+    const r = await fetch(url);
+    const events = await r.json();
+    const tbody = document.getElementById('history-body');
+
+    if (!events.length) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">No prompts yet.<div class="hint">Send prompts in Claude Code to see them here.</div></div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = events.map(e => {
+      const route = e.route || 'enrich';
+      const intercepted = e.was_intercepted;
+      return `
+        <tr>
+          <td style="color:var(--ink2)">${relTime(e.timestamp)}</td>
+          <td>${e.classifier_score}</td>
+          <td>${badge(route, route)}</td>
+          <td>${intercepted ? badge('yes', 'yes') : badge('no', 'no')}</td>
+          <td title="${(e.original_prompt || '').replace(/"/g, '&quot;')}">${trunc(e.original_prompt, 80)}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ── Memory ─────────────────────────────────────────────────────────────────
+
+  async function loadMemory() {
+    const r = await fetch(`${API}/api/memory`);
+    const entries = await r.json();
+    const bodyEl = document.getElementById('memory-body');
+    const countEl = document.getElementById('memory-count');
+
+    if (!entries.length) {
+      countEl.textContent = '0 entries';
+      bodyEl.innerHTML = `<div class="empty-state">No stack memory yet.<div class="hint">Send a few prompts mentioning your tech stack to build it.</div></div>`;
+      return;
+    }
+
+    countEl.textContent = `${entries.length} entries`;
+    bodyEl.innerHTML = `
+      <table class="history-table">
+        <thead>
+          <tr>
+            <th style="width:120px">Key</th>
+            <th style="width:140px">Value</th>
+            <th>Confidence</th>
+            <th style="width:60px">Seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${entries.map(m => `
+            <tr>
+              <td style="color:var(--ink2)">${m.key}</td>
+              <td>${m.value}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <div class="conf-bar"><div class="conf-fill" style="width:${Math.round(m.confidence*100)}%"></div></div>
+                  <span class="conf-pct">${Math.round(m.confidence*100)}%</span>
+                </div>
+              </td>
+              <td style="color:var(--ink2)">${m.source_count}x</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // ── Refresh loop ───────────────────────────────────────────────────────────
+
+  let countdown = 30;
+  let timer = null;
+
+  function tick() {
+    countdown--;
+    document.getElementById('refresh-info').textContent = `auto-refresh in ${countdown}s`;
+    if (countdown <= 0) {
+      refreshAll();
+    }
+  }
+
+  async function refreshAll() {
+    countdown = 30;
+    document.getElementById('refresh-info').textContent = 'Refreshing…';
+    try {
+      const stats = await loadStats();
+      await Promise.all([loadRoutes(), loadFeedback(stats), loadHistory(), loadMemory()]);
+    } catch (e) {
+      document.getElementById('refresh-info').textContent = 'Error — retrying…';
+    }
+    document.getElementById('refresh-info').textContent = `auto-refresh in ${countdown}s`;
+  }
+
+  document.getElementById('intercepted-only').addEventListener('change', loadHistory);
+
+  refreshAll().then(() => {
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, 1000);
+  });
+</script>
+</body>
+</html>

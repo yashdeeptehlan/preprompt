@@ -189,21 +189,21 @@ def get_recent_history(session_id: str, limit: int = 20) -> list[dict]:
     return [_coerce_row(dict(zip(cols, row))) for row in rows]
 
 
-def get_all_history(limit: int = 20, intercepted_only: bool = False) -> list[dict]:
+def get_all_history(limit: int = 100, intercepted_only: bool = False) -> list[dict]:
     """Return most recent events across all sessions. Uses a fresh read connection."""
     where = "WHERE was_intercepted = 1" if intercepted_only else ""
     conn = get_read_connection()
     try:
         rows = conn.execute(f"""
             SELECT id, timestamp, original_prompt, optimized_prompt,
-                   classifier_score, was_intercepted, turn_number, session_id
+                   classifier_score, was_intercepted, turn_number, session_id, route
             FROM prompt_history
             {where}
             ORDER BY timestamp DESC
             LIMIT ?
         """, [limit]).fetchall()
         cols = ["id", "timestamp", "original_prompt", "optimized_prompt",
-                "classifier_score", "was_intercepted", "turn_number", "session_id"]
+                "classifier_score", "was_intercepted", "turn_number", "session_id", "route"]
         return [_coerce_row(dict(zip(cols, row))) for row in rows]
     finally:
         conn.close()
@@ -254,6 +254,48 @@ def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
             VALUES (?, ?, ?, ?, ?, 1)
         """, [str(uuid.uuid4()), _now(), key, value, confidence])
     conn.commit()
+
+
+def get_stack_memory_with_confidence() -> list[dict]:
+    """Return all stack memory entries with confidence. Uses a fresh read connection."""
+    conn = get_read_connection()
+    try:
+        rows = conn.execute("""
+            SELECT key, value, confidence, source_count, updated_at
+            FROM stack_memory
+            ORDER BY confidence DESC
+        """).fetchall()
+    finally:
+        conn.close()
+    cols = ["key", "value", "confidence", "source_count", "updated_at"]
+    result = []
+    for row in rows:
+        d = dict(zip(cols, row))
+        if isinstance(d.get("updated_at"), str):
+            d["updated_at"] = _parse_dt(d["updated_at"])
+        result.append(d)
+    return result
+
+
+def get_route_stats() -> dict:
+    """Return count of prompts by route (pass/enrich/clarify). Uses a fresh read connection."""
+    conn = get_read_connection()
+    try:
+        rows = conn.execute("""
+            SELECT COALESCE(route, 'enrich') as route, COUNT(*) as count
+            FROM prompt_history
+            GROUP BY COALESCE(route, 'enrich')
+        """).fetchall()
+        stats = {"pass": 0, "enrich": 0, "clarify": 0}
+        for route, count in rows:
+            if route in stats:
+                stats[route] = count
+            else:
+                stats["enrich"] += count
+        stats["total"] = sum(stats.values())
+        return stats
+    finally:
+        conn.close()
 
 
 def get_stack_memory() -> dict[str, str]:

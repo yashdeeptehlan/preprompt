@@ -22,6 +22,8 @@ dependencies = [
     "anthropic>=0.40.0",
     "python-dotenv>=1.0.0",
     "pydantic-settings>=2.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
 ]
 
 [project.urls]
@@ -53,9 +55,10 @@ preprompt-feedback           = "cli.commands:feedback_cmd"
 preprompt-install            = "cli.commands:install_cmd"
 preprompt-update             = "cli.commands:update_cmd"
 preprompt-update-context     = "cli.commands:update_context_cmd"
+preprompt-dashboard          = "cli.commands:dashboard_cmd"
 
 [tool.hatch.build.targets.wheel]
-packages = ["mcp_server", "storage", "cli"]
+packages = ["mcp_server", "storage", "cli", "dashboard"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

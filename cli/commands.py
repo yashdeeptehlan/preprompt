@@ -606,6 +606,19 @@ def update_cmd() -> None:
     print(f"  Restart Claude Code and Cursor to activate {latest}")
 
 
+# ── preprompt-dashboard ──────────────────────────────────────────────────────
+
+def dashboard_cmd() -> None:
+    """Launch the PrePrompt local web dashboard at http://localhost:7777."""
+    maybe_run_setup()
+    try:
+        from dashboard.server import main as _dashboard_main
+    except ImportError:
+        print("Dashboard dependencies missing. Run: pip install 'preprompt[dashboard]'", file=sys.stderr)
+        sys.exit(1)
+    _dashboard_main()
+
+
 # ── preprompt-update-context ─────────────────────────────────────────────────
 
 def update_context_cmd() -> None:
