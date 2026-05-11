@@ -64,10 +64,17 @@ def maybe_run_setup() -> None:
     env_path = _get_env_path()
     env_path.parent.mkdir(parents=True, exist_ok=True)
 
+    _MODEL_COMMENT = (
+        "\n# Model for prompt optimization (default: claude-haiku-4-5-20251001)"
+        "\n# Other options: claude-sonnet-4-5, claude-opus-4-5"
+        "\n# PREPROMPT_MODEL=claude-haiku-4-5-20251001\n"
+    )
+
     existing = env_path.read_text() if env_path.exists() else ""
     if "ANTHROPIC_API_KEY" not in existing:
         with open(env_path, "a") as f:
             f.write(f"\nANTHROPIC_API_KEY={key}\n")
+            f.write(_MODEL_COMMENT)
     else:
         lines = existing.splitlines()
         lines = [

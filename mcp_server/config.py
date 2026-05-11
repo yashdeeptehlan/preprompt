@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     mcp_transport: str = "stdio"
+    preprompt_model: str = "claude-haiku-4-5-20251001"
 
 
 settings = Settings()
