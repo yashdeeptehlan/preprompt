@@ -1077,6 +1077,160 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     font-size: 10px !important;
   }
 }
+
+/* ── Demo widget ── */
+.demo-widget {
+  margin-top: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.demo-widget-header {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.demo-widget-header .demo-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+.demo-input-row {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+}
+.demo-textarea {
+  flex: 1;
+  resize: none;
+  border: none;
+  outline: none;
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  background: transparent;
+  color: var(--ink);
+  min-height: 72px;
+  max-height: 120px;
+}
+.demo-textarea::placeholder { color: var(--ink-2); opacity: 0.7; }
+.demo-btn {
+  flex-shrink: 0;
+  align-self: flex-end;
+  margin: 10px 10px 10px 0;
+  padding: 8px 16px;
+  background: var(--accent-ink);
+  color: var(--accent);
+  border: none;
+  border-radius: 5px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.demo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.demo-btn:hover:not(:disabled) { opacity: 0.85; }
+.demo-result {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.demo-result-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.demo-result-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-2);
+}
+.demo-result-text {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.03);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.demo-result-text.optimized {
+  background: rgba(196, 154, 60, 0.08);
+  border-left: 3px solid var(--accent);
+}
+.demo-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.demo-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+.demo-badge-pass    { background: #e0e0e0; color: #444; }
+.demo-badge-enrich  { background: rgba(196,154,60,0.18); color: #7a5a10; }
+.demo-badge-clarify { background: rgba(220,120,20,0.15); color: #8a4a00; }
+.demo-reason {
+  font-size: 11px;
+  color: var(--ink-2);
+  font-style: italic;
+  flex: 1;
+}
+.demo-tries {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-2);
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+.demo-limit-msg {
+  padding: 14px;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: center;
+  border-top: 1px solid var(--border);
+}
+.demo-limit-msg a {
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.demo-limit-msg a:hover { text-decoration: underline; }
+.demo-error {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #9e3a3a;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+}
   </style>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -1132,6 +1286,117 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           <span className="copy-cmd">{cmd}</span>
           <span className="copy-hint">{copied ? 'copied' : 'copy'}</span>
         </button>
+      );
+    }
+
+    /* ── Demo widget ── */
+    const DEMO_API = 'https://preprompt-demo.up.railway.app/api/demo';
+
+    function DemoWidget() {
+      const [prompt, setPrompt] = React.useState('');
+      const [loading, setLoading] = React.useState(false);
+      const [result, setResult] = React.useState(null);   // success response
+      const [limitReached, setLimitReached] = React.useState(false);
+      const [error, setError] = React.useState(null);
+      const [triesLeft, setTriesLeft] = React.useState(null);
+
+      async function handleOptimize() {
+        if (!prompt.trim() || loading) return;
+        setLoading(true);
+        setResult(null);
+        setError(null);
+        setLimitReached(false);
+        try {
+          const res = await fetch(DEMO_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: prompt.trim() }),
+          });
+          if (res.status === 429) {
+            setLimitReached(true);
+            setTriesLeft(0);
+            return;
+          }
+          if (!res.ok) {
+            setError('Something went wrong. Try again.');
+            return;
+          }
+          const data = await res.json();
+          setResult(data);
+          setTriesLeft(data.tries_remaining);
+        } catch (e) {
+          setError('Something went wrong. Try again.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function handleKey(e) {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleOptimize();
+      }
+
+      const badgeClass = result
+        ? result.route === 'pass' ? 'demo-badge-pass'
+          : result.route === 'clarify' ? 'demo-badge-clarify'
+          : 'demo-badge-enrich'
+        : '';
+
+      return (
+        <div className="demo-widget">
+          <div className="demo-widget-header">
+            <span className="demo-dot" />
+            try it live
+          </div>
+          <div className="demo-input-row">
+            <textarea
+              className="demo-textarea"
+              placeholder="Paste any prompt and see PrePrompt optimize it..."
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              onKeyDown={handleKey}
+              rows={3}
+            />
+            <button
+              className="demo-btn"
+              onClick={handleOptimize}
+              disabled={loading || !prompt.trim()}
+            >
+              {loading ? 'Optimizing…' : 'Optimize →'}
+            </button>
+          </div>
+
+          {result && (
+            <div className="demo-result">
+              <div className="demo-result-row">
+                <span className="demo-result-label">Original</span>
+                <div className="demo-result-text">{result.original}</div>
+              </div>
+              <div className="demo-result-row">
+                <span className="demo-result-label">Optimized</span>
+                <div className={`demo-result-text${result.was_optimized ? ' optimized' : ''}`}>
+                  {result.optimized}
+                </div>
+              </div>
+              <div className="demo-meta-row">
+                <span className={`demo-badge ${badgeClass}`}>{result.route}</span>
+                <span className="demo-reason">{result.reason}</span>
+              </div>
+            </div>
+          )}
+
+          {limitReached && (
+            <div className="demo-limit-msg">
+              You've used your 2 free tries.{' '}
+              <a href="#">Get 500/month for $8 →</a>
+            </div>
+          )}
+
+          {error && <div className="demo-error">{error}</div>}
+
+          {triesLeft !== null && !limitReached && (
+            <div className="demo-tries">{triesLeft} tr{triesLeft === 1 ? 'y' : 'ies'} remaining</div>
+          )}
+        </div>
       );
     }
 
@@ -1238,6 +1503,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
                   <span className="arrow">→</span>
                 </a>
               </div>
+
+              <DemoWidget />
 
               <div className="hero-meta">
                 <div><span className="hero-meta-k">latency</span><span className="hero-meta-v">&lt; 1ms</span></div>
