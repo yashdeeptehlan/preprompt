@@ -6,6 +6,76 @@
   <title>preprompt — your prompts, battle-tested</title>
   <meta name="description" content="MCP server that intercepts and optimizes prompts in Claude Code and Cursor before they reach the LLM. Zero noise, sub-ms latency, runs locally." />
 
+  <link rel="canonical" href="https://preprompt.org/" />
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://preprompt.org/" />
+  <meta property="og:site_name" content="PrePrompt" />
+  <meta property="og:title" content="PrePrompt — Prompt Optimization MCP Server for Claude Code & Cursor" />
+  <meta property="og:description" content="Open-source MCP server that intercepts and optimizes prompts in Claude Code, Cursor, Windsurf, and Zed before they reach the LLM. Sub-millisecond heuristic classifier. pip install preprompt." />
+  <meta property="og:image" content="https://preprompt.org/preprompt-logo-lockup.png" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="PrePrompt — Prompt Optimization MCP Server for Claude Code & Cursor" />
+  <meta name="twitter:description" content="Open-source MCP server that intercepts and optimizes prompts before they reach the LLM. Sub-millisecond classifier. pip install preprompt." />
+  <meta name="twitter:image" content="https://preprompt.org/preprompt-logo-lockup.png" />
+
+  <meta name="author" content="Yashdeep Tehlan" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+  <meta name="theme-color" content="#f7f3ee" />
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "PrePrompt",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows",
+        "url": "https://preprompt.org",
+        "downloadUrl": "https://pypi.org/project/preprompt/",
+        "softwareVersion": "0.1.8",
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "description": "MCP server that intercepts prompts in Claude Code and Cursor, scores them with a heuristic classifier, and rewrites complex ones via Claude Haiku. Runs locally.",
+        "author": { "@type": "Person", "name": "Yashdeep Tehlan", "url": "https://github.com/yashdeeptehlan" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does PrePrompt require a Claude.ai subscription?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. PrePrompt uses your Anthropic API key directly. New accounts get $5 free credit at console.anthropic.com. This is separate from Claude.ai Pro or Team subscriptions." }
+          },
+          {
+            "@type": "Question",
+            "name": "Which IDEs does PrePrompt support?",
+            "acceptedAnswer": { "@type": "Answer", "text": "PrePrompt supports Claude Code (fully automatic via UserPromptSubmit hook), Cursor (automatic in Agent mode via MCP), Windsurf, and Zed. VS Code support is in development." }
+          },
+          {
+            "@type": "Question",
+            "name": "Will PrePrompt slow down my coding workflow?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. The heuristic classifier runs in under 1ms locally with zero API calls. Simple prompts — questions, short acknowledgements, already-structured requests — pass through untouched. Only complex prompts scoring 38 or higher trigger a Claude Haiku rewrite, adding approximately 1-2 seconds." }
+          },
+          {
+            "@type": "Question",
+            "name": "What is an MCP server and how does PrePrompt use it?",
+            "acceptedAnswer": { "@type": "Answer", "text": "MCP (Model Context Protocol) is an open standard by Anthropic that lets external tools communicate with AI coding assistants like Claude Code and Cursor. PrePrompt implements an MCP server that intercepts the UserPromptSubmit hook, scoring and rewriting prompts before they reach the LLM." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does my code leave my machine when using PrePrompt?",
+            "acceptedAnswer": { "@type": "Answer", "text": "The only external call is to Anthropic's API to rewrite the prompt — the same API your IDE already uses. Your codebase, files, and history stay local in SQLite at ~/.preprompt/history.db." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
@@ -1421,6 +1491,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             <a href="#classifier">classifier</a>
             <a href="#memory">memory</a>
             <a href="#install">install</a>
+            <a href="/blog/">blog</a>
+            <a href="/integrations/cursor.html">integrations</a>
             <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" style={{color: "var(--accent-ink)", fontWeight: 600}}>join beta</a>
             <a href="https://github.com/yashdeeptehlan/preprompt" className="nav-gh">
               <span className="nav-gh-dot" /> github
