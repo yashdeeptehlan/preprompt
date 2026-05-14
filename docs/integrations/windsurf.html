@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PrePrompt for Windsurf — MCP Prompt Optimization</title>
+  <meta name="description" content="Install PrePrompt in Windsurf via MCP. Automatic prompt optimization: every vague prompt is scored locally in under 1ms and rewritten by Claude Haiku before reaching the LLM. Runs entirely on your machine." />
+  <link rel="canonical" href="https://preprompt.org/integrations/windsurf.html" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://preprompt.org/integrations/windsurf.html" />
+  <meta property="og:title" content="PrePrompt for Windsurf — MCP Prompt Optimization" />
+  <meta property="og:description" content="Automatic prompt optimization in Windsurf via MCP. Sub-millisecond classifier, Claude Haiku rewrites, local-first privacy." />
+  <meta property="og:image" content="https://preprompt.org/preprompt-logo-lockup.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index, follow" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Where is Windsurf's MCP configuration file?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Windsurf reads MCP server configuration from ~/.codeium/windsurf/mcp_config.json. Running 'preprompt-install' or 'python scripts/install_windsurf.py' writes the correct entry automatically." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does PrePrompt work in Windsurf?",
+        "acceptedAnswer": { "@type": "Answer", "text": "Yes. Windsurf has full MCP support. PrePrompt integrates via the UserPromptSubmit hook, intercepting prompts before they reach the LLM, scoring them with a local heuristic classifier, and rewriting complex ones via Claude Haiku." }
+      }
+    ]
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f7f3ee; color: #2a2520; font-family: 'Inter Tight', sans-serif; line-height: 1.7; }
+    a { color: #c49a3c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+    nav { border-bottom: 1px solid #ddd8d0; }
+    nav .wrap { display: flex; justify-content: space-between; align-items: center; padding-top: 20px; padding-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .nav-links { display: flex; gap: 24px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #6b6560; flex-wrap: wrap; }
+    .nav-links a { color: #6b6560; text-decoration: none; }
+    .nav-links a:hover { color: #2a2520; }
+    .nav-links .cta { color: #c49a3c; font-weight: 600; }
+    .page-header { padding: 64px 0 48px; border-bottom: 1px solid #ddd8d0; margin-bottom: 48px; max-width: 720px; }
+    .breadcrumb { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6b6560; margin-bottom: 24px; }
+    .breadcrumb a { color: #6b6560; }
+    .ide-badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 4px; padding: 4px 10px; color: #6b6560; margin-bottom: 20px; }
+    h1 { font-family: 'JetBrains Mono', monospace; font-size: 34px; font-weight: 700; color: #2a2520; line-height: 1.2; margin-bottom: 16px; }
+    .lead { font-size: 17px; color: #5a5550; line-height: 1.6; }
+    .content { max-width: 720px; }
+    h2 { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: #2a2520; margin: 48px 0 16px; line-height: 1.3; }
+    h3 { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; color: #2a2520; margin: 32px 0 12px; }
+    p { font-size: 16px; margin-bottom: 20px; color: #3a3530; }
+    ul, ol { padding-left: 24px; margin-bottom: 20px; }
+    li { font-size: 16px; margin-bottom: 8px; color: #3a3530; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 14px; background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 4px; padding: 2px 6px; }
+    pre { background: #2a2520; color: #f0ece5; border-radius: 8px; padding: 24px; overflow-x: auto; margin: 24px 0; font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; }
+    pre code { background: none; border: none; padding: 0; color: inherit; }
+    .steps { counter-reset: step; list-style: none; padding: 0; margin: 24px 0; }
+    .steps li { counter-increment: step; padding: 20px 20px 20px 64px; position: relative; border: 1px solid #ddd8d0; border-radius: 8px; margin-bottom: 12px; background: #fff; }
+    .steps li::before { content: counter(step); position: absolute; left: 20px; top: 20px; width: 28px; height: 28px; background: #c49a3c; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; }
+    .steps li strong { font-family: 'JetBrains Mono', monospace; font-size: 14px; display: block; margin-bottom: 6px; color: #2a2520; }
+    .qa-block { background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 6px; padding: 24px; margin: 32px 0; }
+    .qa-block .q { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: #2a2520; margin-bottom: 8px; }
+    .qa-block .a { font-size: 15px; color: #3a3530; margin: 0; }
+    .see-also { border-top: 1px solid #ddd8d0; margin-top: 64px; padding-top: 32px; margin-bottom: 64px; }
+    .see-also h2 { margin-top: 0; }
+    .see-also ul { list-style: none; padding: 0; }
+    .see-also li { padding: 12px 0; border-bottom: 1px solid #ddd8d0; font-size: 15px; }
+    .see-also li a { color: #2a2520; font-weight: 600; }
+    .see-also li a:hover { color: #c49a3c; text-decoration: none; }
+    .cta-box { background: #2a2520; color: #f0ece5; border-radius: 8px; padding: 32px; margin: 48px 0; }
+    .cta-box h3 { font-family: 'JetBrains Mono', monospace; color: #f0ece5; margin-top: 0; margin-bottom: 12px; font-size: 18px; }
+    .cta-box p { color: #b0aca8; margin-bottom: 20px; font-size: 15px; }
+    .cta-box a { display: inline-block; background: #c49a3c; color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; padding: 10px 20px; border-radius: 6px; text-decoration: none; }
+    footer { border-top: 1px solid #ddd8d0; padding: 40px 0; }
+    footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+    .footer-brand { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: #2a2520; }
+    .footer-links { display: flex; gap: 24px; font-family: 'JetBrains Mono', monospace; font-size: 13px; flex-wrap: wrap; }
+    .footer-links a { color: #6b6560; text-decoration: none; }
+    .footer-links a:hover { color: #2a2520; }
+    @media (max-width: 700px) {
+      .wrap { padding: 0 20px; }
+      h1 { font-size: 26px; }
+      .nav-links a:not(:last-child):not(.cta) { display: none; }
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a href="/"><img src="/preprompt-logo-lockup.png" alt="PrePrompt" style="height:28px;width:auto;display:block;" /></a>
+    <div class="nav-links">
+      <a href="/#how">how it works</a>
+      <a href="/#install">install</a>
+      <a href="/blog/">blog</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" class="cta">join beta →</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <div class="page-header">
+    <div class="breadcrumb"><a href="/">Home</a> / Integrations</div>
+    <div class="ide-badge">Windsurf</div>
+    <h1>PrePrompt + Windsurf: Optimize Prompts Before They Reach the LLM</h1>
+    <p class="lead">Windsurf has full MCP support. PrePrompt integrates via the UserPromptSubmit hook to intercept, score, and rewrite your prompts automatically — before any LLM API call is made.</p>
+  </div>
+
+  <div class="content">
+
+    <h2>How PrePrompt Works in Windsurf</h2>
+
+    <p>Windsurf implements the full Model Context Protocol, including the <code>UserPromptSubmit</code> hook. When you submit a prompt in Windsurf with PrePrompt installed:</p>
+
+    <ol>
+      <li>The hook fires before the prompt reaches any LLM.</li>
+      <li>PrePrompt scores the prompt locally in under 1ms using its heuristic classifier — no API call.</li>
+      <li>Prompts scoring below 38 pass through unchanged with zero latency and zero cost.</li>
+      <li>Prompts scoring 38 or above are rewritten by Claude Haiku to be more specific and actionable.</li>
+      <li>Windsurf sends the optimized prompt to the LLM.</li>
+      <li>The interaction is logged locally to <code>~/.preprompt/history.db</code>.</li>
+    </ol>
+
+    <h2>Installation</h2>
+
+    <ol class="steps">
+      <li>
+        <strong>Install PrePrompt</strong>
+        <pre>pip install preprompt</pre>
+      </li>
+      <li>
+        <strong>Run the setup wizard</strong>
+        <pre>preprompt-install</pre>
+        <p>This saves your Anthropic API key and registers PrePrompt with every compatible IDE detected on your system, including Windsurf.</p>
+        <p>To register Windsurf specifically:</p>
+        <pre>python scripts/install_windsurf.py</pre>
+      </li>
+      <li>
+        <strong>Verify the Windsurf config</strong>
+        <pre>cat ~/.codeium/windsurf/mcp_config.json</pre>
+        <p>You should see a <code>preprompt</code> entry in the <code>mcpServers</code> object.</p>
+      </li>
+      <li>
+        <strong>Restart Windsurf</strong>
+        <p>MCP servers are loaded at startup. Restart Windsurf to pick up the new configuration.</p>
+      </li>
+    </ol>
+
+    <h2>The MCP Configuration Entry</h2>
+
+    <p><code>preprompt-install</code> writes the following to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+
+    <pre>{
+  "mcpServers": {
+    "preprompt": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "env": {
+        "ANTHROPIC_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}</pre>
+
+    <h2>What Gets Optimized</h2>
+
+    <ul>
+      <li><strong>Pass</strong> — factual questions, very short prompts, conversational responses. Zero cost, zero latency.</li>
+      <li><strong>Enrich</strong> — complex prompts with vague action verbs, missing constraints, or multi-step requirements. Rewritten by Haiku (~1–2 seconds, ~$0.001).</li>
+      <li><strong>Clarify</strong> — very short vague prompts without technical context. Returns a clarifying question to help you write a better prompt.</li>
+    </ul>
+
+    <h2>Frequently Asked Questions</h2>
+
+    <div class="qa-block">
+      <div class="q">Q: Does PrePrompt support Windsurf's Cascade AI?</div>
+      <p class="a">A: Yes. PrePrompt works at the MCP protocol level, which sits beneath Windsurf's Cascade AI. Any prompt you submit through Cascade that passes through the UserPromptSubmit hook will be intercepted and (if needed) optimized before it reaches the model.</p>
+    </div>
+
+    <div class="qa-block">
+      <div class="q">Q: Where is Windsurf's MCP configuration file?</div>
+      <p class="a">A: <code>~/.codeium/windsurf/mcp_config.json</code>. Running <code>preprompt-install</code> or <code>python scripts/install_windsurf.py</code> writes the correct entry automatically.</p>
+    </div>
+
+    <div class="qa-block">
+      <div class="q">Q: Will PrePrompt interfere with Windsurf's built-in context tools?</div>
+      <p class="a">A: No. PrePrompt only operates on the text of your prompt before it is sent. It does not modify files, does not interact with other MCP servers, and does not affect Windsurf's context window or repository indexing features.</p>
+    </div>
+
+    <div class="cta-box">
+      <h3>Get started in two commands</h3>
+      <p>Install PrePrompt and register it with Windsurf (and any other compatible IDEs you have installed).</p>
+      <a href="/#install">View full install guide →</a>
+    </div>
+
+    <div class="see-also">
+      <h2>See Also</h2>
+      <ul>
+        <li><a href="/integrations/cursor.html">PrePrompt for Cursor</a> — Cursor-specific MCP setup</li>
+        <li><a href="/integrations/claude-code.html">PrePrompt for Claude Code</a> — automatic interception via UserPromptSubmit hook</li>
+        <li><a href="/blog/what-is-mcp-server.html">What is an MCP Server?</a> — how the MCP protocol works across IDEs</li>
+        <li><a href="/blog/better-prompts-claude-code.html">How to Write Better Prompts</a> — manual techniques that complement PrePrompt</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <span class="footer-brand">preprompt</span>
+    <div class="footer-links">
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+      <a href="/blog/">blog</a>
+      <a href="/#install">install</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt/blob/main/LICENSE">mit license</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
