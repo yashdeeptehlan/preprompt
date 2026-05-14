@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>What is an MCP Server? A Developer's Guide — PrePrompt</title>
+  <meta name="description" content="MCP (Model Context Protocol) is an open standard by Anthropic that lets tools communicate with AI coding assistants. This guide explains what MCP servers are, how they work in Claude Code and Cursor, and how PrePrompt uses them to optimize prompts automatically." />
+  <link rel="canonical" href="https://preprompt.org/blog/what-is-mcp-server.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://preprompt.org/blog/what-is-mcp-server.html" />
+  <meta property="og:title" content="What is an MCP Server? A Developer's Guide — PrePrompt" />
+  <meta property="og:description" content="What MCP servers are, how they work in Claude Code and Cursor, and how PrePrompt uses them to optimize prompts before they reach the LLM." />
+  <meta property="og:image" content="https://preprompt.org/preprompt-logo-lockup.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "headline": "What is an MCP Server? A Developer's Guide",
+        "description": "MCP (Model Context Protocol) is an open standard by Anthropic for AI tool integration. This guide explains what MCP servers are, how they work, and how PrePrompt uses them.",
+        "url": "https://preprompt.org/blog/what-is-mcp-server.html",
+        "datePublished": "2026-05-13",
+        "dateModified": "2026-05-13",
+        "author": { "@type": "Person", "name": "Yashdeep Tehlan", "url": "https://github.com/yashdeeptehlan" },
+        "publisher": { "@type": "Organization", "name": "PrePrompt", "url": "https://preprompt.org" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What is an MCP server?",
+            "acceptedAnswer": { "@type": "Answer", "text": "An MCP server is a process that implements Anthropic's Model Context Protocol — an open standard that allows external tools to communicate with AI coding assistants like Claude Code and Cursor. MCP servers can expose tools, resources, and prompts that the AI assistant can call during a coding session." }
+          },
+          {
+            "@type": "Question",
+            "name": "What does MCP stand for?",
+            "acceptedAnswer": { "@type": "Answer", "text": "MCP stands for Model Context Protocol. It was introduced by Anthropic in late 2024 as an open standard for AI tool integration, allowing any tool to communicate with any MCP-compatible AI assistant." }
+          },
+          {
+            "@type": "Question",
+            "name": "How do I add an MCP server to Claude Code?",
+            "acceptedAnswer": { "@type": "Answer", "text": "MCP servers are configured in ~/.claude/settings.json under the 'mcpServers' key. Each entry specifies the command to run the server, its arguments, and any environment variables it needs. Tools like PrePrompt can register themselves automatically via 'preprompt-install'." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Cursor support MCP servers?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. Cursor supports MCP servers in Agent mode. The configuration lives in ~/.cursor/mcp.json. MCP tools are not available in Cursor's Ask or Plan modes — only Agent mode activates them." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f7f3ee; color: #2a2520; font-family: 'Inter Tight', sans-serif; line-height: 1.7; }
+    a { color: #c49a3c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+    nav { border-bottom: 1px solid #ddd8d0; }
+    nav .wrap { display: flex; justify-content: space-between; align-items: center; padding-top: 20px; padding-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .nav-links { display: flex; gap: 24px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #6b6560; flex-wrap: wrap; }
+    .nav-links a { color: #6b6560; text-decoration: none; }
+    .nav-links a:hover { color: #2a2520; }
+    .nav-links .cta { color: #c49a3c; font-weight: 600; }
+    .article-wrap { max-width: 720px; margin: 0 auto; padding: 0 40px; }
+    .article-header { padding: 64px 0 48px; border-bottom: 1px solid #ddd8d0; margin-bottom: 48px; }
+    .breadcrumb { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6b6560; margin-bottom: 24px; }
+    .breadcrumb a { color: #6b6560; }
+    h1 { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; color: #2a2520; line-height: 1.2; margin-bottom: 20px; }
+    .byline { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #6b6560; display: flex; gap: 16px; flex-wrap: wrap; }
+    h2 { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: #2a2520; margin: 48px 0 16px; line-height: 1.3; }
+    h3 { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; color: #2a2520; margin: 32px 0 12px; }
+    p { font-size: 16px; margin-bottom: 20px; color: #3a3530; }
+    ul, ol { padding-left: 24px; margin-bottom: 20px; }
+    li { font-size: 16px; margin-bottom: 8px; color: #3a3530; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 14px; background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 4px; padding: 2px 6px; }
+    pre { background: #2a2520; color: #f0ece5; border-radius: 8px; padding: 24px; overflow-x: auto; margin: 24px 0; font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; }
+    pre code { background: none; border: none; padding: 0; color: inherit; }
+    .callout { background: #fff; border: 1px solid #c49a3c; border-left: 4px solid #c49a3c; border-radius: 6px; padding: 20px 24px; margin: 32px 0; font-size: 16px; color: #2a2520; font-style: italic; }
+    .qa-block { background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 6px; padding: 24px; margin: 32px 0; }
+    .qa-block .q { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: #2a2520; margin-bottom: 8px; }
+    .qa-block .a { font-size: 15px; color: #3a3530; margin: 0; }
+    .ide-table { width: 100%; border-collapse: collapse; margin: 24px 0; font-size: 14px; }
+    .ide-table th { font-family: 'JetBrains Mono', monospace; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #6b6560; padding: 12px 16px; border-bottom: 2px solid #ddd8d0; text-align: left; }
+    .ide-table td { padding: 12px 16px; border-bottom: 1px solid #ddd8d0; vertical-align: top; }
+    .ide-table tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 600; border-radius: 4px; padding: 2px 8px; }
+    .badge-yes { background: #e8f4ec; color: #2d8a50; }
+    .badge-partial { background: #fef3e2; color: #c49a3c; }
+    .badge-no { background: #f5f5f5; color: #9a9490; }
+    .further-reading { border-top: 1px solid #ddd8d0; margin-top: 64px; padding-top: 32px; margin-bottom: 64px; }
+    .further-reading h2 { margin-top: 0; }
+    .further-reading ul { list-style: none; padding: 0; }
+    .further-reading li { padding: 12px 0; border-bottom: 1px solid #ddd8d0; font-size: 15px; }
+    .further-reading li a { color: #2a2520; font-weight: 600; }
+    .further-reading li a:hover { color: #c49a3c; text-decoration: none; }
+    footer { border-top: 1px solid #ddd8d0; padding: 40px 0; }
+    footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+    .footer-brand { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: #2a2520; }
+    .footer-links { display: flex; gap: 24px; font-family: 'JetBrains Mono', monospace; font-size: 13px; flex-wrap: wrap; }
+    .footer-links a { color: #6b6560; text-decoration: none; }
+    .footer-links a:hover { color: #2a2520; }
+    @media (max-width: 700px) {
+      .wrap, .article-wrap { padding: 0 20px; }
+      h1 { font-size: 26px; }
+      .nav-links a:not(:last-child):not(.cta) { display: none; }
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a href="/"><img src="/preprompt-logo-lockup.png" alt="PrePrompt" style="height:28px;width:auto;display:block;" /></a>
+    <div class="nav-links">
+      <a href="/#how">how it works</a>
+      <a href="/#install">install</a>
+      <a href="/blog/">blog</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" class="cta">join beta →</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+    </div>
+  </div>
+</nav>
+
+<div class="article-wrap">
+  <header class="article-header">
+    <div class="breadcrumb"><a href="/blog/">Blog</a> / Explainer</div>
+    <h1>What is an MCP Server? A Developer's Guide</h1>
+    <div class="byline">
+      <span>Yashdeep Tehlan</span>
+      <span>May 2026</span>
+      <span>9 min read</span>
+    </div>
+  </header>
+
+  <p>You've seen "MCP" in Claude Code's settings and in Cursor's configuration. Here's what it actually is, why Anthropic introduced it, how it works across the major AI coding assistants — and how tools like PrePrompt use it to intercept prompts before the LLM ever sees them.</p>
+
+  <h2>The Short Answer</h2>
+
+  <div class="qa-block">
+    <div class="q">Q: What is an MCP server?</div>
+    <p class="a">A: An MCP server is a process that implements Anthropic's Model Context Protocol — an open standard that allows external tools to communicate with AI coding assistants like Claude Code and Cursor. MCP servers can expose tools (callable functions), resources (data the AI can read), and event hooks (like UserPromptSubmit) that the AI assistant invokes during a coding session.</p>
+  </div>
+
+  <div class="qa-block">
+    <div class="q">Q: What does MCP stand for?</div>
+    <p class="a">A: MCP stands for Model Context Protocol. It was introduced by Anthropic in late 2024 as an open standard for AI tool integration — allowing any external tool to communicate with any MCP-compatible AI assistant without bespoke integration work.</p>
+  </div>
+
+  <h2>Why MCP Exists</h2>
+
+  <p>Before MCP, every tool integration with an AI coding assistant was bespoke. If you wanted a custom context injector in Claude Code, you wrote a plugin in whatever format that specific IDE required. If you wanted the same tool in Cursor, you rewrote it in a different format. Windsurf and Zed each had their own approach.</p>
+
+  <p>MCP standardizes the protocol so that one implementation can work across all compatible hosts. The analogy is precise:</p>
+
+  <div class="callout">MCP is to AI coding assistants what LSP (Language Server Protocol) is to editors. One standard protocol; any compliant tool works with any compliant host.</div>
+
+  <p>An MCP server written for Claude Code also works in Cursor, Windsurf, and Zed — because they all implement the same protocol. PrePrompt is built this way: <code>pip install preprompt</code> works with all four IDEs from a single implementation.</p>
+
+  <h2>How an MCP Server Works: The Technical Picture</h2>
+
+  <h3>The client-server model</h3>
+
+  <p>MCP has two sides. The <strong>host</strong> (Claude Code, Cursor, Windsurf, Zed) is the client. The <strong>server</strong> is the external tool — PrePrompt, a database connector, a documentation fetcher, or anything else. The host discovers available servers via configuration files and starts them as subprocesses when needed.</p>
+
+  <h3>What an MCP server can expose</h3>
+
+  <ul>
+    <li><strong>Tools</strong> — callable functions the AI can invoke. Example: <code>get_prompt_history</code> in PrePrompt, which the AI can call to see recent prompts.</li>
+    <li><strong>Resources</strong> — files or data streams the AI can read without calling a tool. Example: a documentation file, a database schema.</li>
+    <li><strong>Prompts</strong> — pre-written prompt templates the AI can load on demand.</li>
+    <li><strong>Hooks</strong> — event callbacks that fire at specific points in the AI interaction lifecycle. The most important for PrePrompt is <code>UserPromptSubmit</code>.</li>
+  </ul>
+
+  <h3>The UserPromptSubmit Hook Is How PrePrompt Intercepts Prompts</h3>
+
+  <p>The <code>UserPromptSubmit</code> hook fires every time a developer submits a prompt in Claude Code — before the prompt reaches the LLM. It is the hook that gives PrePrompt its interception capability.</p>
+
+  <p>The full request flow when you have PrePrompt installed:</p>
+
+  <pre>User types prompt
+    → UserPromptSubmit hook fires (PrePrompt subprocess)
+        → classify_prompt()     ← local heuristic, &lt;1ms, no API
+        → if score &lt; 38: passthrough unchanged
+        → else: optimize() via Claude Haiku API
+        → print optimized prompt + annotation box to stderr
+        → write JSON sidecar to ~/.preprompt/pending/
+    → Claude Code sends (possibly optimized) prompt to LLM
+    → (on next MCP tool call)
+        → flush_pending_hook_events() reads sidecars → SQLite</pre>
+
+  <p>The hook never touches the SQLite database directly — that avoids lock contention with the running MCP server. The sidecar pattern (writing to <code>~/.preprompt/pending/</code> as JSON files) is the IPC mechanism between the hook subprocess and the MCP server process.</p>
+
+  <h2>MCP Support Across IDEs</h2>
+
+  <table class="ide-table">
+    <thead>
+      <tr>
+        <th>IDE</th>
+        <th>MCP Support</th>
+        <th>UserPromptSubmit Hook</th>
+        <th>Config Location</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Claude Code</strong></td>
+        <td><span class="badge badge-yes">Full</span></td>
+        <td><span class="badge badge-yes">Yes — automatic</span></td>
+        <td><code>~/.claude/settings.json</code></td>
+      </tr>
+      <tr>
+        <td><strong>Cursor</strong></td>
+        <td><span class="badge badge-partial">Agent mode only</span></td>
+        <td><span class="badge badge-partial">Via MCP rules</span></td>
+        <td><code>~/.cursor/mcp.json</code></td>
+      </tr>
+      <tr>
+        <td><strong>Windsurf</strong></td>
+        <td><span class="badge badge-yes">Full</span></td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><code>~/.codeium/windsurf/mcp_config.json</code></td>
+      </tr>
+      <tr>
+        <td><strong>Zed</strong></td>
+        <td><span class="badge badge-yes">Full</span></td>
+        <td><span class="badge badge-yes">Yes</span></td>
+        <td><code>~/.config/zed/settings.json</code></td>
+      </tr>
+      <tr>
+        <td><strong>VS Code</strong></td>
+        <td><span class="badge badge-partial">Partial (GitHub Copilot)</span></td>
+        <td><span class="badge badge-no">Not yet</span></td>
+        <td>In development</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>The Cursor caveat is important: MCP tools only activate in <strong>Agent mode</strong>. If you are using Cursor's Ask or Plan modes, MCP servers are not invoked at all. PrePrompt's automatic interception requires Agent mode in Cursor.</p>
+
+  <h2>How to Install an MCP Server: PrePrompt as an Example</h2>
+
+  <p>The general pattern for installing any MCP server into Claude Code involves two steps: install the server, then register it in <code>~/.claude/settings.json</code>. For PrePrompt specifically, one command handles both:</p>
+
+  <pre>pip install preprompt
+preprompt-install</pre>
+
+  <p><code>preprompt-install</code> detects which IDEs you have installed (Claude Code, Cursor, Windsurf, Zed) and writes the appropriate config to each. For Claude Code, it writes an <code>mcpServers</code> entry pointing to the Python module and a <code>hooks.UserPromptSubmit</code> entry pointing to the hook subprocess.</p>
+
+  <p>The resulting entry in <code>~/.claude/settings.json</code> looks like this:</p>
+
+  <pre>{
+  "mcpServers": {
+    "preprompt": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "env": { "ANTHROPIC_API_KEY": "your-key-here" }
+    }
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "python -m cli.hook" }]
+      }
+    ]
+  }
+}</pre>
+
+  <h2>Frequently Asked Questions</h2>
+
+  <h3>How do I add an MCP server to Claude Code?</h3>
+  <p>Edit <code>~/.claude/settings.json</code> and add a <code>mcpServers</code> key. Each entry needs at minimum a <code>command</code> (the executable) and <code>args</code> (arguments to pass). Many MCP servers provide an install script that does this automatically — PrePrompt uses <code>preprompt-install</code>.</p>
+
+  <h3>Does Cursor support MCP servers in all modes?</h3>
+  <p>No. MCP tools only activate in Cursor's <strong>Agent mode</strong>. The Ask and Plan modes do not invoke MCP servers. This is a Cursor limitation, not an MCP limitation. If you are primarily using Cursor in Ask mode, PrePrompt's automatic interception will not fire — you can still use the <code>preprompt-optimize</code> CLI command manually.</p>
+
+  <h3>Can MCP servers access my codebase?</h3>
+  <p>Only if the MCP server is explicitly designed to do so and you configure it with access. PrePrompt does not read your codebase — it only sees the prompt text you submit. All logging is local to <code>~/.preprompt/history.db</code> on your machine.</p>
+
+  <h3>Is MCP an open standard?</h3>
+  <p>Yes. The MCP specification is open and published by Anthropic at <a href="https://modelcontextprotocol.io" target="_blank" rel="noreferrer">modelcontextprotocol.io</a>. Any IDE can implement the protocol and any tool developer can build MCP servers. The growing MCP ecosystem means tools like PrePrompt work across multiple IDEs without IDE-specific code.</p>
+
+  <div class="further-reading">
+    <h2>Further Reading</h2>
+    <ul>
+      <li><a href="/integrations/cursor.html">PrePrompt for Cursor</a> — Cursor-specific MCP setup and Agent mode configuration</li>
+      <li><a href="/integrations/windsurf.html">PrePrompt for Windsurf</a> — Windsurf MCP integration guide</li>
+      <li><a href="/integrations/claude-code.html">PrePrompt for Claude Code</a> — complete Claude Code installation walkthrough</li>
+    </ul>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span class="footer-brand">preprompt</span>
+    <div class="footer-links">
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+      <a href="/blog/">blog</a>
+      <a href="/#install">install</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt/blob/main/LICENSE">mit license</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

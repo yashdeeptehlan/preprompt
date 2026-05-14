@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>How to Write Better Prompts for Claude Code — PrePrompt</title>
+  <meta name="description" content="Learn how to write better prompts for Claude Code with concrete techniques: specify output format, state constraints upfront, number multi-step requirements, and how automatic prompt optimization handles the rest." />
+  <link rel="canonical" href="https://preprompt.org/blog/better-prompts-claude-code.html" />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://preprompt.org/blog/better-prompts-claude-code.html" />
+  <meta property="og:title" content="How to Write Better Prompts for Claude Code — PrePrompt" />
+  <meta property="og:description" content="Five patterns that make Claude Code prompts dramatically more specific. Plus how automatic optimization catches the ones you write quickly." />
+  <meta property="og:image" content="https://preprompt.org/preprompt-logo-lockup.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Article",
+        "headline": "How to Write Better Prompts for Claude Code",
+        "description": "Five patterns that make Claude Code prompts dramatically more specific — plus how automatic optimization catches the ones you write quickly.",
+        "url": "https://preprompt.org/blog/better-prompts-claude-code.html",
+        "datePublished": "2026-05-13",
+        "dateModified": "2026-05-13",
+        "author": { "@type": "Person", "name": "Yashdeep Tehlan", "url": "https://github.com/yashdeeptehlan" },
+        "publisher": { "@type": "Organization", "name": "PrePrompt", "url": "https://preprompt.org" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I know if my Claude Code prompt needs optimization?",
+            "acceptedAnswer": { "@type": "Answer", "text": "A prompt likely needs optimization if it contains vague action verbs ('handle', 'manage', 'deal with'), combines multiple requirements without numbering them, or omits the output format and error scenarios. The PrePrompt heuristic classifier scores these signals automatically in under 1ms on every prompt." }
+          },
+          {
+            "@type": "Question",
+            "name": "What is the threshold score for prompt optimization in PrePrompt?",
+            "acceptedAnswer": { "@type": "Answer", "text": "PrePrompt uses a threshold of 38 on a 0-100 heuristic scale. Prompts scoring below 38 — short questions, already-structured requests, factual lookups — pass through untouched. Only prompts at or above 38 trigger a Claude Haiku rewrite call." }
+          },
+          {
+            "@type": "Question",
+            "name": "Does better prompt writing replace tools like PrePrompt?",
+            "acceptedAnswer": { "@type": "Answer", "text": "They are complementary. Manual techniques help you write better prompts consciously. PrePrompt catches the prompts you write quickly or under deadline pressure, where you might forget to add context or structure." }
+          },
+          {
+            "@type": "Question",
+            "name": "How much does a Haiku rewrite add to my workflow time?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Approximately 1-2 seconds per optimized prompt. The classifier itself adds under 1ms on every prompt. Haiku is only called when the classifier scores a prompt at 38 or above, so simple prompts are never delayed." }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f7f3ee; color: #2a2520; font-family: 'Inter Tight', sans-serif; line-height: 1.7; }
+    a { color: #c49a3c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 40px; }
+    nav { border-bottom: 1px solid #ddd8d0; }
+    nav .wrap { display: flex; justify-content: space-between; align-items: center; padding-top: 20px; padding-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .nav-links { display: flex; gap: 24px; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #6b6560; flex-wrap: wrap; }
+    .nav-links a { color: #6b6560; text-decoration: none; }
+    .nav-links a:hover { color: #2a2520; }
+    .nav-links .cta { color: #c49a3c; font-weight: 600; }
+    .article-wrap { max-width: 720px; margin: 0 auto; padding: 0 40px; }
+    .article-header { padding: 64px 0 48px; border-bottom: 1px solid #ddd8d0; margin-bottom: 48px; }
+    .breadcrumb { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6b6560; margin-bottom: 24px; }
+    .breadcrumb a { color: #6b6560; }
+    h1 { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; color: #2a2520; line-height: 1.2; margin-bottom: 20px; }
+    .byline { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #6b6560; display: flex; gap: 16px; flex-wrap: wrap; }
+    h2 { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; color: #2a2520; margin: 48px 0 16px; line-height: 1.3; }
+    h3 { font-family: 'JetBrains Mono', monospace; font-size: 16px; font-weight: 600; color: #2a2520; margin: 32px 0 12px; }
+    p { font-size: 16px; margin-bottom: 20px; color: #3a3530; }
+    ul, ol { padding-left: 24px; margin-bottom: 20px; }
+    li { font-size: 16px; margin-bottom: 8px; color: #3a3530; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 14px; background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 4px; padding: 2px 6px; }
+    pre { background: #2a2520; color: #f0ece5; border-radius: 8px; padding: 24px; overflow-x: auto; margin: 24px 0; font-family: 'JetBrains Mono', monospace; font-size: 14px; line-height: 1.6; }
+    pre code { background: none; border: none; padding: 0; color: inherit; }
+    .stat-callout { background: #fff; border: 1px solid #c49a3c; border-left: 4px solid #c49a3c; border-radius: 6px; padding: 20px 24px; margin: 32px 0; }
+    .stat-callout strong { font-family: 'JetBrains Mono', monospace; font-size: 28px; font-weight: 700; color: #c49a3c; display: block; margin-bottom: 4px; }
+    .stat-callout p { font-size: 14px; color: #5a5550; margin: 0; }
+    .qa-block { background: #f0ece5; border: 1px solid #ddd8d0; border-radius: 6px; padding: 24px; margin: 32px 0; }
+    .qa-block .q { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; color: #2a2520; margin-bottom: 8px; }
+    .qa-block .a { font-size: 15px; color: #3a3530; margin: 0; }
+    .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 24px 0; }
+    .ba-card { border-radius: 6px; padding: 16px 20px; }
+    .ba-card.before { background: #fff0f0; border: 1px solid #f0c0c0; }
+    .ba-card.after { background: #f0fff4; border: 1px solid #a8d8b8; }
+    .ba-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .ba-card.before .ba-label { color: #c0504a; }
+    .ba-card.after .ba-label { color: #2d8a50; }
+    .ba-card p { font-size: 14px; margin: 0; font-family: 'JetBrains Mono', monospace; line-height: 1.5; }
+    .score-badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; border-radius: 4px; padding: 3px 8px; margin-left: 8px; }
+    .score-pass { background: #e8f4ec; color: #2d8a50; }
+    .score-intercept { background: #fef3e2; color: #c49a3c; }
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { padding: 8px 0 8px 28px; position: relative; border-bottom: 1px solid #ddd8d0; font-size: 15px; }
+    .checklist li::before { content: "□"; position: absolute; left: 0; font-family: 'JetBrains Mono', monospace; color: #c49a3c; font-weight: 700; }
+    .install-box { background: #2a2520; color: #f0ece5; border-radius: 8px; padding: 24px; margin: 24px 0; }
+    .install-box .cmd { font-family: 'JetBrains Mono', monospace; font-size: 15px; margin-bottom: 8px; }
+    .install-box .cmd:last-child { margin-bottom: 0; }
+    .install-box .comment { color: #9a9490; font-size: 13px; }
+    .further-reading { border-top: 1px solid #ddd8d0; margin-top: 64px; padding-top: 32px; margin-bottom: 64px; }
+    .further-reading h2 { margin-top: 0; }
+    .further-reading ul { list-style: none; padding: 0; }
+    .further-reading li { padding: 12px 0; border-bottom: 1px solid #ddd8d0; font-size: 15px; }
+    .further-reading li a { color: #2a2520; font-weight: 600; }
+    .further-reading li a:hover { color: #c49a3c; text-decoration: none; }
+    footer { border-top: 1px solid #ddd8d0; padding: 40px 0; }
+    footer .wrap { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+    .footer-brand { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 14px; color: #2a2520; }
+    .footer-links { display: flex; gap: 24px; font-family: 'JetBrains Mono', monospace; font-size: 13px; flex-wrap: wrap; }
+    .footer-links a { color: #6b6560; text-decoration: none; }
+    .footer-links a:hover { color: #2a2520; }
+    @media (max-width: 700px) {
+      .wrap, .article-wrap { padding: 0 20px; }
+      h1 { font-size: 26px; }
+      .before-after { grid-template-columns: 1fr; }
+      .nav-links a:not(:last-child):not(.cta) { display: none; }
+    }
+  </style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <a href="/"><img src="/preprompt-logo-lockup.png" alt="PrePrompt" style="height:28px;width:auto;display:block;" /></a>
+    <div class="nav-links">
+      <a href="/#how">how it works</a>
+      <a href="/#install">install</a>
+      <a href="/blog/">blog</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" class="cta">join beta →</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+    </div>
+  </div>
+</nav>
+
+<div class="article-wrap">
+  <header class="article-header">
+    <div class="breadcrumb"><a href="/blog/">Blog</a> / Guide</div>
+    <h1>How to Write Better Prompts for Claude Code</h1>
+    <div class="byline">
+      <span>Yashdeep Tehlan</span>
+      <span>May 2026</span>
+      <span>12 min read</span>
+    </div>
+  </header>
+
+  <p>Most developers send Claude Code vague requests and wonder why the output needs three rounds of clarification. The fix is not writing essays — it is five patterns that take ten seconds to apply, and knowing when to let automatic optimization handle it for you.</p>
+
+  <h2>Why Vague Prompts Cost You More Time Than They Save</h2>
+
+  <p>There is a counterintuitive asymmetry at the heart of AI-assisted coding. Writing a vague prompt feels fast: five words, hit enter. But you pay for that speed downstream. The output misses a constraint, handles the wrong error case, or returns the wrong format — and you spend two minutes correcting it, re-prompting, and waiting again.</p>
+
+  <p>A prompt that takes fifteen seconds to write well can eliminate two rounds of back-and-forth. That is not a philosophical claim about prompt engineering; it is arithmetic.</p>
+
+  <h3>The hidden cost of prompt ambiguity</h3>
+
+  <p>Consider the difference between two prompts for the same task:</p>
+
+  <div class="before-after">
+    <div class="ba-card before">
+      <div class="ba-label">Vague</div>
+      <p>write middleware that validates tokens and handles refresh</p>
+    </div>
+    <div class="ba-card after">
+      <div class="ba-label">Specific</div>
+      <p>Write a FastAPI middleware function that (1) validates JWT tokens from the Authorization header, (2) calls /auth/refresh if the token is expired, (3) returns HTTP 401 if the refresh also fails. Return the request.state.user dict. Use httpx for the refresh call.</p>
+    </div>
+  </div>
+
+  <p>The specific version takes maybe twenty seconds to write. It eliminates: which framework, which token standard, which header, what refresh behavior, what error response, and what the middleware should set on the request state. That is six clarifying questions Claude Code will not need to ask, and six ways the output cannot diverge from what you actually want.</p>
+
+  <div class="stat-callout">
+    <strong>~40%</strong>
+    <p>of prompts in a typical Claude Code session score 38 or above on PrePrompt's heuristic classifier — indicating ambiguity, multi-requirement density, or missing context that makes them candidates for optimization.</p>
+  </div>
+
+  <h2>The Five Prompt Patterns That Work in Claude Code</h2>
+
+  <h3>1. Specify the output format, not just the task</h3>
+
+  <p>Claude Code cannot infer what shape of output you want unless you tell it. "Write a function to handle OAuth" is a task. "Write a Python async function named <code>exchange_code_for_token</code> that takes a <code>code: str</code> parameter and returns a <code>TokenResponse</code> dataclass" is a task with a specified output format.</p>
+
+  <p>The output format signals: language, sync vs async, function vs class vs module, return type, parameter names and types, and naming conventions. All of these are guesses if you do not specify them. Each guess is a source of a follow-up prompt.</p>
+
+  <h3>2. State technical constraints upfront</h3>
+
+  <p>Claude Code has no idea you are using FastAPI with Pydantic v2 and Python 3.11 unless you say so. Even if it has read your files, it does not know which version constraints matter to you, which library is already in scope, or what your existing code style requires.</p>
+
+  <p>Put constraints at the top of your prompt: language version, framework, libraries already imported, coding style expectations, deployment target. Ten words of context at the start prevents twenty words of correction at the end.</p>
+
+  <h3>3. Number multi-step requirements: (1), (2), (3)</h3>
+
+  <p>When a prompt contains more than one requirement, prose runs them together in a way that is easy for the model to conflate or partially miss. Numbered requirements force the model to treat each item discretely.</p>
+
+  <p>Compare: "handle token refresh with proper error handling and logging" versus "(1) attempt token refresh by calling <code>POST /auth/refresh</code>, (2) log the refresh attempt with the user ID and timestamp, (3) raise <code>AuthTokenExpiredError</code> if the refresh returns 401 or 403". The second version cannot be partially implemented — each requirement is checkable.</p>
+
+  <h3>4. Include the error scenarios you care about</h3>
+
+  <p>Claude Code will handle exceptions — but which ones? Network timeouts? Invalid tokens? Rate limiting? Database unavailability? If you do not specify, it will make reasonable defaults that may not match your actual requirements. Listing the error scenarios you care about takes five seconds and eliminates an entire category of follow-up.</p>
+
+  <p>Useful phrasing: "Handle the following error cases: (a) network timeout after 5 seconds, (b) 401 from the upstream API, (c) malformed JSON response." You do not need to be exhaustive — just explicit about the cases that matter to your deployment.</p>
+
+  <h3>5. Reference the existing file or function name when modifying code</h3>
+
+  <p>"In <code>auth/middleware.py</code>, the function <code>validate_token</code> currently returns a boolean — change it to return the decoded payload dict or raise <code>AuthError</code>" is unambiguous. "Update the token validation function" requires Claude Code to find the right file, find the right function, guess the current signature, and guess what you want changed.</p>
+
+  <p>Grounding your prompt in the actual file and function name costs nothing and makes the output immediately correct for your codebase rather than a generic template.</p>
+
+  <h2>What Your Prompt Score Means (and When to Optimize)</h2>
+
+  <p>PrePrompt's heuristic classifier scores prompts on a 0–100 scale. The signals driving the score are:</p>
+
+  <ul>
+    <li><strong>Positive signals:</strong> Ambiguity verbs ("handle", "manage", "deal with", "implement"), multiple requirements in a single prompt, missing output format hint, technical depth without structure.</li>
+    <li><strong>Negative signals:</strong> Factual questions ("what is JWT"), conversational openers ("thanks", "yes"), already-structured prompts with numbered steps, very short prompts (under 4 words with no technical noun).</li>
+  </ul>
+
+  <div class="qa-block">
+    <div class="q">Q: How do I know if my Claude Code prompt needs optimization?</div>
+    <p class="a">A: A prompt likely needs optimization if it contains vague action verbs ("handle", "manage", "deal with"), combines multiple requirements without numbering them, or omits the output format and error scenarios. The PrePrompt heuristic classifier scores these signals automatically in under 1ms on every prompt submitted through Claude Code.</p>
+  </div>
+
+  <div class="qa-block">
+    <div class="q">Q: What is the threshold score for prompt optimization in PrePrompt?</div>
+    <p class="a">A: PrePrompt uses a threshold of 38 on a 0–100 heuristic scale. Prompts scoring below 38 — short questions, already-structured requests, lookup queries — pass through untouched with zero latency and zero API cost. Only prompts at or above 38 trigger a Claude Haiku rewrite, adding approximately 1–2 seconds.</p>
+  </div>
+
+  <h2>How Automatic Prompt Optimization Works</h2>
+
+  <p>PrePrompt sits between your keyboard and Claude Code. Every time you submit a prompt, four things happen in sequence:</p>
+
+  <ol>
+    <li>The <strong>UserPromptSubmit hook</strong> intercepts the prompt before it reaches the LLM.</li>
+    <li>The <strong>heuristic classifier</strong> scores the prompt locally in under 1ms — no API call, no latency.</li>
+    <li>If the score is below 38, the prompt <strong>passes through untouched</strong>.</li>
+    <li>If the score is 38 or above, <strong>Claude Haiku rewrites it</strong>, adding specificity and structure while preserving your original intent exactly.</li>
+  </ol>
+
+  <p>The rewritten prompt is what Claude Code receives. You see the annotation in your terminal. The original and optimized versions are both logged locally in <code>~/.preprompt/history.db</code>.</p>
+
+  <p>To install:</p>
+
+  <div class="install-box">
+    <div class="cmd"><span class="comment"># Install</span></div>
+    <div class="cmd">pip install preprompt</div>
+    <div class="cmd">&nbsp;</div>
+    <div class="cmd"><span class="comment"># Register hooks for Claude Code (and Cursor if installed)</span></div>
+    <div class="cmd">preprompt-install</div>
+  </div>
+
+  <h2>Before and After: Three Real Examples</h2>
+
+  <h3>Example 1 — middleware prompt <span class="score-badge score-intercept">score: 48 — intercepted</span></h3>
+
+  <div class="before-after">
+    <div class="ba-card before">
+      <div class="ba-label">Original</div>
+      <p>write me a middleware that validates tokens and handles refresh</p>
+    </div>
+    <div class="ba-card after">
+      <div class="ba-label">Optimized by PrePrompt</div>
+      <p>Write a FastAPI middleware that: (1) extracts the Bearer token from the Authorization header and validates it as a JWT, (2) if expired, calls POST /auth/refresh with the refresh token from the cookie and updates request.state.user with the new payload, (3) returns HTTP 401 with {"error": "unauthorized"} if validation and refresh both fail. Use python-jose for JWT parsing.</p>
+    </div>
+  </div>
+
+  <p>What changed: framework specified (FastAPI), token standard specified (JWT), refresh mechanism specified (POST endpoint + cookie), error response format specified, library specified. Six sources of ambiguity removed.</p>
+
+  <h3>Example 2 — rate limiter prompt <span class="score-badge score-intercept">score: 70 — intercepted</span></h3>
+
+  <div class="before-after">
+    <div class="ba-card before">
+      <div class="ba-label">Original</div>
+      <p>implement a rate limiter that tracks requests, manages quotas, handles bursts</p>
+    </div>
+    <div class="ba-card after">
+      <div class="ba-label">Optimized by PrePrompt</div>
+      <p>Implement a token bucket rate limiter in Python as a class RateLimiter with: (1) per-user quota tracking using Redis INCR with TTL, (2) burst allowance up to 3x the per-minute rate for up to 10 seconds, (3) a check_rate(user_id: str) -> bool method that returns False and logs a warning when quota is exceeded. Include a reset_quota(user_id: str) method. Use redis.asyncio.</p>
+    </div>
+  </div>
+
+  <p>What changed: storage backend specified (Redis), algorithm specified (token bucket), class structure specified, method signatures specified, burst parameters made concrete, async specified. The original "manages quotas" and "handles bursts" are now unambiguous.</p>
+
+  <h3>Example 3 — factual lookup (correctly passes through) <span class="score-badge score-pass">score: −35 — pass</span></h3>
+
+  <div class="before-after">
+    <div class="ba-card before">
+      <div class="ba-label">Original</div>
+      <p>what is jwt</p>
+    </div>
+    <div class="ba-card after">
+      <div class="ba-label">Unchanged — passes through</div>
+      <p>what is jwt</p>
+    </div>
+  </div>
+
+  <p>The classifier correctly identifies this as a factual question. It starts with "what", scores −35, and passes through to Claude Code untouched. No API call, no latency. This is the correct behavior — not every prompt needs optimization.</p>
+
+  <h2>The Prompt Quality Checklist</h2>
+
+  <p>Before sending any complex prompt to Claude Code, run through this list:</p>
+
+  <ul class="checklist">
+    <li>State the programming language and framework</li>
+    <li>Specify the output format (function, class, CLI script, etc.)</li>
+    <li>Number multi-step requirements: (1), (2), (3)</li>
+    <li>Name the error scenarios you care about</li>
+    <li>Reference the existing file or function name when modifying code</li>
+    <li>Specify return type and parameter types where relevant</li>
+    <li>Mention any libraries already in scope</li>
+  </ul>
+
+  <p>You will not need this checklist for simple prompts — "what is jwt", "fix the syntax error on line 42", "add a docstring to this function" are already specific enough. The checklist is for the complex, multi-requirement prompts that tend to produce mediocre first attempts.</p>
+
+  <p>If you install PrePrompt, the classifier handles the checklist automatically for prompts you submit quickly. You end up with well-structured prompts even when you did not have time to write them carefully.</p>
+
+  <h2>Frequently Asked Questions</h2>
+
+  <h3>Does better prompt writing replace tools like PrePrompt?</h3>
+  <p>They are complementary. Manual techniques help you write better prompts consciously and build good habits over time. PrePrompt catches the prompts you write quickly or under deadline pressure — the ones where you forgot to specify the framework, or lumped three requirements into one sentence. The classifier only fires when a prompt actually needs it.</p>
+
+  <h3>How much does a Haiku rewrite add to my workflow time?</h3>
+  <p>Approximately 1–2 seconds per optimized prompt. The classifier itself adds under 1ms on every prompt. Haiku is only called when the score is 38 or above, which is roughly 40% of prompts in a typical coding session. Simple prompts — questions, short commands, already-structured tasks — are never delayed.</p>
+
+  <h3>Can I see what PrePrompt changed in my prompt?</h3>
+  <p>Yes. PrePrompt prints the original and optimized prompt in a rich annotation box in your terminal. The original is always logged alongside the optimized version in <code>~/.preprompt/history.db</code>. Running <code>preprompt-history</code> shows recent prompts with their scores and routes.</p>
+
+  <h3>Is PrePrompt suitable for all programming languages?</h3>
+  <p>Yes. The classifier scores prompts based on linguistic signals, not code syntax. The Haiku rewrite is language-agnostic. PrePrompt works with Python, TypeScript, Go, Rust, and any other language you use in Claude Code or Cursor. The stack memory system learns your preferred language and framework from your prompts over time, injecting that context into future rewrites automatically.</p>
+
+  <div class="further-reading">
+    <h2>Further Reading</h2>
+    <ul>
+      <li><a href="/blog/what-is-mcp-server.html">What is an MCP Server? A Developer's Guide</a> — understand how PrePrompt hooks into Claude Code at the protocol level</li>
+      <li><a href="/integrations/claude-code.html">PrePrompt for Claude Code</a> — full installation guide and Claude Code-specific configuration</li>
+      <li><a href="/blog/why-ai-prompts-get-mediocre-results.html">Why Your AI Prompts Are Getting Mediocre Results</a> — the five root causes of poor AI output</li>
+    </ul>
+  </div>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <span class="footer-brand">preprompt</span>
+    <div class="footer-links">
+      <a href="https://github.com/yashdeeptehlan/preprompt">github</a>
+      <a href="/blog/">blog</a>
+      <a href="/#install">install</a>
+      <a href="/integrations/cursor.html">integrations</a>
+      <a href="https://github.com/yashdeeptehlan/preprompt/blob/main/LICENSE">mit license</a>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
