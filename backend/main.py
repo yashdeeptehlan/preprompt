@@ -117,10 +117,28 @@ def _sb_headers() -> dict:
     }
 
 
-async def _get_usage_count(ip: str) -> int:
+async def _verify_jwt(token: str) -> str | None:
+    """Verify a Supabase JWT and return the user_id, or None if invalid."""
+    if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+        return None
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(
+                f"{SUPABASE_URL}/auth/v1/user",
+                headers={"Authorization": f"Bearer {token}", "apikey": SUPABASE_SECRET_KEY},
+                timeout=5,
+            )
+            if r.status_code == 200:
+                return r.json().get("id")
+    except Exception:
+        pass
+    return None
+
+
+async def _get_usage_count(key: str) -> int:
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         return 0
-    url = f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{ip}&select=count"
+    url = f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}&select=count"
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers=_sb_headers(), timeout=5)
         rows = r.json()
@@ -129,18 +147,17 @@ async def _get_usage_count(ip: str) -> int:
     return 0
 
 
-async def _upsert_usage(ip: str) -> int:
-    """Increment IP usage count and return the new count."""
+async def _upsert_usage(key: str) -> int:
+    """Increment usage count for the given key and return the new count."""
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         return 1
     url = f"{SUPABASE_URL}/rest/v1/demo_usage"
     headers = {**_sb_headers(), "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}
-    payload = {"ip": ip, "count": 1, "last_used_at": "now()"}
+    payload = {"ip": key, "count": 1, "last_used_at": "now()"}
     async with httpx.AsyncClient() as client:
         await client.post(url, json=payload, headers=headers, timeout=5)
-        # Fetch updated count
         r2 = await client.get(
-            f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{ip}&select=count",
+            f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}&select=count",
             headers=_sb_headers(), timeout=5,
         )
         rows = r2.json()
@@ -168,9 +185,14 @@ async def demo(body: DemoRequest, request: Request) -> JSONResponse:
     if not prompt:
         return JSONResponse({"error": "empty_prompt", "message": "Prompt cannot be empty."}, status_code=400)
 
-    ip = _get_client_ip(request)
+    # Prefer user-keyed tracking for authenticated requests
+    auth_header = request.headers.get("Authorization", "")
+    user_id: str | None = None
+    if auth_header.startswith("Bearer "):
+        user_id = await _verify_jwt(auth_header[7:])
+    tracking_key = f"user:{user_id}" if user_id else _get_client_ip(request)
 
-    current_count = await _get_usage_count(ip)
+    current_count = await _get_usage_count(tracking_key)
     if current_count >= DEMO_LIMIT:
         return JSONResponse(
             {"error": "limit_reached", "message": "You've used your 2 free tries. Get 500/month for $8 →"},
@@ -188,7 +210,7 @@ async def demo(body: DemoRequest, request: Request) -> JSONResponse:
         result = _optimize(prompt)
         was_optimized = result["optimized_prompt"] != prompt
 
-    new_count = await _upsert_usage(ip)
+    new_count = await _upsert_usage(tracking_key)
     tries_remaining = max(0, DEMO_LIMIT - new_count)
 
     return JSONResponse({

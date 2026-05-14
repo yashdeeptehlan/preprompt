@@ -1301,17 +1301,118 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
   border-top: 1px solid var(--border);
   font-family: var(--mono);
 }
+
+/* ── Auth Modal ── */
+.auth-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.auth-modal {
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  width: 100%;
+  max-width: 400px;
+  position: relative;
+  font-family: var(--mono);
+}
+.auth-modal-header { padding: 24px 24px 0; }
+.auth-modal-close {
+  all: unset;
+  cursor: pointer;
+  position: absolute;
+  top: 16px; right: 16px;
+  font-size: 18px;
+  color: var(--ink-3);
+  line-height: 1;
+  padding: 4px 6px;
+}
+.auth-modal-close:hover { color: var(--ink); }
+.auth-modal-title { font-size: 18px; font-weight: 700; color: var(--ink); margin: 0 0 6px; }
+.auth-modal-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin: 0 0 20px;
+  font-family: var(--sans);
+}
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--rule);
+  padding: 0 24px;
+}
+.auth-tab {
+  all: unset;
+  cursor: pointer;
+  padding: 10px 0;
+  margin-right: 24px;
+  font-size: 13px;
+  color: var(--ink-3);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.auth-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+.auth-form {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.auth-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--bg-2);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  color: var(--ink);
+}
+.auth-input:focus { border-color: var(--accent); outline: none; }
+.auth-btn-submit {
+  all: unset;
+  cursor: pointer;
+  width: 100%;
+  padding: 12px;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: var(--radius);
+  margin-top: 4px;
+  box-sizing: border-box;
+}
+.auth-btn-submit:hover { opacity: 0.85; }
+.auth-btn-submit:disabled { opacity: 0.4; cursor: not-allowed; }
+.auth-err {
+  font-size: 11px;
+  color: #9e3a3a;
+  font-family: var(--mono);
+  margin-top: -4px;
+}
   </style>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div id="app"></div>
 
   <script type="text/babel">
     const { useState } = React;
+
+    /* ── Supabase ── */
+    const SUPABASE_URL = 'https://huepsixuprproppfumhi.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable__R1QDzp3_jzF-GZLNka6bQ_smMa6fBs';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
     /* ── Logo ── */
     function LogoMark({ size = 28, stroke = 'currentColor', fill = 'currentColor', accent = null }) {
@@ -1362,29 +1463,145 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     /* ── Demo widget ── */
     const DEMO_API = 'https://preprompt-production-df10.up.railway.app/api/demo';
 
+    /* ── Auth Modal ── */
+    function AuthModal({ onClose, onAuthSuccess }) {
+      const [tab, setTab] = React.useState('signup');
+      const [email, setEmail] = React.useState('');
+      const [password, setPassword] = React.useState('');
+      const [confirm, setConfirm] = React.useState('');
+      const [loading, setLoading] = React.useState(false);
+      const [err, setErr] = React.useState('');
+
+      React.useEffect(() => {
+        function onKey(e) { if (e.key === 'Escape') onClose(); }
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [onClose]);
+
+      async function handleSignUp(e) {
+        e.preventDefault();
+        if (password !== confirm) { setErr('Passwords do not match.'); return; }
+        if (password.length < 8) { setErr('Password must be at least 8 characters.'); return; }
+        setErr(''); setLoading(true);
+        try {
+          const { data, error } = await supabase.auth.signUp({ email, password });
+          if (error) { setErr(error.message); return; }
+          const user = data.user;
+          if (user) {
+            await supabase.from('user_profiles').upsert({
+              id: user.id, email: user.email, demo_tries_used: 0,
+            });
+          }
+          onAuthSuccess(data.session);
+        } catch (ex) {
+          setErr('Sign up failed. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      async function handleLogin(e) {
+        e.preventDefault();
+        setErr(''); setLoading(true);
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) { setErr(error.message); return; }
+          onAuthSuccess(data.session);
+        } catch (ex) {
+          setErr('Login failed. Please try again.');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      return (
+        <div className="auth-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+          <div className="auth-modal" role="dialog" aria-modal="true">
+            <button className="auth-modal-close" onClick={onClose} aria-label="close">×</button>
+            <div className="auth-modal-header">
+              <div className="auth-modal-title">Try PrePrompt</div>
+              <div className="auth-modal-sub">Create a free account to optimize your first prompt</div>
+            </div>
+            <div className="auth-tabs">
+              <button className={`auth-tab${tab === 'signup' ? ' active' : ''}`} onClick={() => { setTab('signup'); setErr(''); }}>Sign Up</button>
+              <button className={`auth-tab${tab === 'login' ? ' active' : ''}`} onClick={() => { setTab('login'); setErr(''); }}>Log In</button>
+            </div>
+            {tab === 'signup' ? (
+              <form className="auth-form" onSubmit={handleSignUp}>
+                <input className="auth-input" type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+                <input className="auth-input" type="password" placeholder="Password (min 8 chars)" value={password} onChange={e => setPassword(e.target.value)} required />
+                <input className="auth-input" type="password" placeholder="Confirm password" value={confirm} onChange={e => setConfirm(e.target.value)} required />
+                {err && <div className="auth-err">{err}</div>}
+                <button className="auth-btn-submit" type="submit" disabled={loading}>{loading ? 'Creating account…' : 'Create Account'}</button>
+              </form>
+            ) : (
+              <form className="auth-form" onSubmit={handleLogin}>
+                <input className="auth-input" type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+                <input className="auth-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
+                {err && <div className="auth-err">{err}</div>}
+                <button className="auth-btn-submit" type="submit" disabled={loading}>{loading ? 'Logging in…' : 'Log In'}</button>
+              </form>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function DemoWidget() {
       const [prompt, setPrompt] = React.useState('');
       const [loading, setLoading] = React.useState(false);
-      const [result, setResult] = React.useState(null);   // success response
-      const [limitReached, setLimitReached] = React.useState(false);
+      const [result, setResult] = React.useState(null);
       const [error, setError] = React.useState(null);
-      const [triesLeft, setTriesLeft] = React.useState(null);
+      const [user, setUser] = React.useState(null);
+      const [showAuthModal, setShowAuthModal] = React.useState(false);
+      const [triesUsed, setTriesUsed] = React.useState(0);
 
-      async function handleOptimize() {
+      React.useEffect(() => {
+        async function init() {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            setUser(session.user);
+            await loadTriesUsed(session.user.id);
+          }
+        }
+        init();
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+          if (session?.user) {
+            setUser(session.user);
+            await loadTriesUsed(session.user.id);
+          } else {
+            setUser(null);
+            setTriesUsed(0);
+          }
+        });
+        return () => subscription.unsubscribe();
+      }, []);
+
+      async function loadTriesUsed(userId) {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('demo_tries_used')
+          .eq('id', userId)
+          .single();
+        if (data) setTriesUsed(data.demo_tries_used || 0);
+        return data?.demo_tries_used || 0;
+      }
+
+      async function runOptimize(session, currentTriesUsed) {
         if (!prompt.trim() || loading) return;
         setLoading(true);
         setResult(null);
         setError(null);
-        setLimitReached(false);
         try {
+          const headers = { 'Content-Type': 'application/json' };
+          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
           const res = await fetch(DEMO_API, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ prompt: prompt.trim() }),
           });
           if (res.status === 429) {
-            setLimitReached(true);
-            setTriesLeft(0);
+            setTriesUsed(2);
             return;
           }
           if (!res.ok) {
@@ -1393,7 +1610,13 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           }
           const data = await res.json();
           setResult(data);
-          setTriesLeft(data.tries_remaining);
+          if (session?.user?.id) {
+            const newTriesUsed = currentTriesUsed + 1;
+            setTriesUsed(newTriesUsed);
+            await supabase.from('user_profiles')
+              .update({ demo_tries_used: newTriesUsed })
+              .eq('id', session.user.id);
+          }
         } catch (e) {
           setError('Something went wrong. Try again.');
         } finally {
@@ -1401,10 +1624,40 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         }
       }
 
+      async function handleOptimize() {
+        if (!prompt.trim() || loading) return;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setShowAuthModal(true);
+          return;
+        }
+        if (triesUsed >= 2) return;
+        await runOptimize(session, triesUsed);
+      }
+
+      async function handleAuthSuccess(session) {
+        setShowAuthModal(false);
+        setUser(session?.user || null);
+        let currentTriesUsed = 0;
+        if (session?.user) {
+          const { data } = await supabase
+            .from('user_profiles')
+            .select('demo_tries_used')
+            .eq('id', session.user.id)
+            .single();
+          currentTriesUsed = data?.demo_tries_used || 0;
+          setTriesUsed(currentTriesUsed);
+        }
+        if (currentTriesUsed < 2) {
+          await runOptimize(session, currentTriesUsed);
+        }
+      }
+
       function handleKey(e) {
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleOptimize();
       }
 
+      const limitReached = user && triesUsed >= 2;
       const badgeClass = result
         ? result.route === 'pass' ? 'demo-badge-pass'
           : result.route === 'clarify' ? 'demo-badge-clarify'
@@ -1412,61 +1665,68 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         : '';
 
       return (
-        <div className="demo-widget">
-          <div className="demo-widget-header">
-            <span className="demo-dot" />
-            try it live
-          </div>
-          <div className="demo-input-row">
-            <textarea
-              className="demo-textarea"
-              placeholder="Paste any prompt and see PrePrompt optimize it..."
-              value={prompt}
-              onChange={e => setPrompt(e.target.value)}
-              onKeyDown={handleKey}
-              rows={3}
-            />
-            <button
-              className="demo-btn"
-              onClick={handleOptimize}
-              disabled={loading || !prompt.trim()}
-            >
-              {loading ? 'Optimizing…' : 'Optimize →'}
-            </button>
-          </div>
+        <>
+          {showAuthModal && (
+            <AuthModal onClose={() => setShowAuthModal(false)} onAuthSuccess={handleAuthSuccess} />
+          )}
+          <div className="demo-widget">
+            <div className="demo-widget-header">
+              <span className="demo-dot" />
+              try it live
+            </div>
+            <div className="demo-input-row">
+              <textarea
+                className="demo-textarea"
+                placeholder="Paste any prompt and see PrePrompt optimize it..."
+                value={prompt}
+                onChange={e => setPrompt(e.target.value)}
+                onKeyDown={handleKey}
+                rows={3}
+              />
+              {!limitReached && (
+                <button
+                  className="demo-btn"
+                  onClick={handleOptimize}
+                  disabled={loading || !prompt.trim()}
+                >
+                  {loading ? 'Optimizing…' : 'Optimize →'}
+                </button>
+              )}
+            </div>
 
-          {result && (
-            <div className="demo-result">
-              <div className="demo-result-row">
-                <span className="demo-result-label">Original</span>
-                <div className="demo-result-text">{result.original}</div>
-              </div>
-              <div className="demo-result-row">
-                <span className="demo-result-label">Optimized</span>
-                <div className={`demo-result-text${result.was_optimized ? ' optimized' : ''}`}>
-                  {result.optimized}
+            {result && (
+              <div className="demo-result">
+                <div className="demo-result-row">
+                  <span className="demo-result-label">Original</span>
+                  <div className="demo-result-text">{result.original}</div>
+                </div>
+                <div className="demo-result-row">
+                  <span className="demo-result-label">Optimized</span>
+                  <div className={`demo-result-text${result.was_optimized ? ' optimized' : ''}`}>
+                    {result.optimized}
+                  </div>
+                </div>
+                <div className="demo-meta-row">
+                  <span className={`demo-badge ${badgeClass}`}>{result.route}</span>
+                  <span className="demo-reason">{result.reason}</span>
                 </div>
               </div>
-              <div className="demo-meta-row">
-                <span className={`demo-badge ${badgeClass}`}>{result.route}</span>
-                <span className="demo-reason">{result.reason}</span>
+            )}
+
+            {limitReached && (
+              <div className="demo-limit-msg">
+                You've used your 2 free tries.{' '}
+                <a href="#pricing">Get 500/month for $8 →</a>
               </div>
-            </div>
-          )}
+            )}
 
-          {limitReached && (
-            <div className="demo-limit-msg">
-              You've used your 2 free tries.{' '}
-              <a href="#">Get 500/month for $8 →</a>
-            </div>
-          )}
+            {error && <div className="demo-error">{error}</div>}
 
-          {error && <div className="demo-error">{error}</div>}
-
-          {triesLeft !== null && !limitReached && (
-            <div className="demo-tries">{triesLeft} tr{triesLeft === 1 ? 'y' : 'ies'} remaining</div>
-          )}
-        </div>
+            {user && !limitReached && triesUsed > 0 && (
+              <div className="demo-tries">{2 - triesUsed} tr{(2 - triesUsed) === 1 ? 'y' : 'ies'} remaining</div>
+            )}
+          </div>
+        </>
       );
     }
 
