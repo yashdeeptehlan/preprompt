@@ -1396,6 +1396,41 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
   font-family: var(--mono);
   margin-top: -4px;
 }
+.auth-resend-btn {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  margin-top: -4px;
+}
+.auth-resend-msg {
+  font-size: 11px;
+  color: var(--pos, #3a7a4a);
+  font-family: var(--mono);
+  margin-top: -4px;
+}
+.demo-user-bar {
+  padding: 7px 14px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.demo-signout-btn {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent-ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-decoration: underline;
+}
+.demo-signout-btn:hover { opacity: 0.7; }
   </style>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -1471,6 +1506,9 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       const [confirm, setConfirm] = React.useState('');
       const [loading, setLoading] = React.useState(false);
       const [err, setErr] = React.useState('');
+      const [signupDone, setSignupDone] = React.useState(false);
+      const [showResend, setShowResend] = React.useState(false);
+      const [resendMsg, setResendMsg] = React.useState('');
 
       React.useEffect(() => {
         function onKey(e) { if (e.key === 'Escape') onClose(); }
@@ -1492,7 +1530,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
               id: user.id, email: user.email, demo_tries_used: 0,
             });
           }
-          onAuthSuccess(data.session);
+          setSignupDone(true);
         } catch (ex) {
           setErr('Sign up failed. Please try again.');
         } finally {
@@ -1502,16 +1540,54 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 
       async function handleLogin(e) {
         e.preventDefault();
-        setErr(''); setLoading(true);
+        setErr(''); setShowResend(false); setResendMsg(''); setLoading(true);
         try {
           const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-          if (error) { setErr(error.message); return; }
+          if (error) {
+            if (error.message.includes('Email not confirmed')) {
+              setErr('Please check your email and click the confirmation link first.');
+              setShowResend(true);
+            } else {
+              setErr(error.message);
+            }
+            return;
+          }
           onAuthSuccess(data.session);
         } catch (ex) {
           setErr('Login failed. Please try again.');
         } finally {
           setLoading(false);
         }
+      }
+
+      async function handleResendConfirmation() {
+        setResendMsg('');
+        try {
+          await supabase.auth.resend({ type: 'signup', email });
+          setResendMsg('Confirmation email sent. Check your inbox.');
+        } catch (ex) {
+          setResendMsg('Could not resend. Please try again.');
+        }
+      }
+
+      if (signupDone) {
+        return (
+          <div className="auth-overlay" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+            <div className="auth-modal" role="dialog" aria-modal="true">
+              <button className="auth-modal-close" onClick={onClose} aria-label="close">×</button>
+              <div className="auth-form" style={{textAlign: 'center', paddingTop: '36px', paddingBottom: '36px'}}>
+                <div style={{fontSize: '28px', marginBottom: '12px', color: 'var(--accent-ink)'}}>✓</div>
+                <div style={{fontFamily: 'var(--mono)', fontWeight: 700, fontSize: '16px', color: 'var(--ink)', marginBottom: '10px'}}>
+                  Account created!
+                </div>
+                <div style={{fontSize: '13px', color: 'var(--ink-2)', fontFamily: 'var(--sans)', lineHeight: 1.6}}>
+                  Check <strong>{email}</strong> for a confirmation link.<br />
+                  After confirming, return here to try PrePrompt.
+                </div>
+              </div>
+            </div>
+          </div>
+        );
       }
 
       return (
@@ -1523,8 +1599,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
               <div className="auth-modal-sub">Create a free account to optimize your first prompt</div>
             </div>
             <div className="auth-tabs">
-              <button className={`auth-tab${tab === 'signup' ? ' active' : ''}`} onClick={() => { setTab('signup'); setErr(''); }}>Sign Up</button>
-              <button className={`auth-tab${tab === 'login' ? ' active' : ''}`} onClick={() => { setTab('login'); setErr(''); }}>Log In</button>
+              <button className={`auth-tab${tab === 'signup' ? ' active' : ''}`} onClick={() => { setTab('signup'); setErr(''); setShowResend(false); setResendMsg(''); }}>Sign Up</button>
+              <button className={`auth-tab${tab === 'login' ? ' active' : ''}`} onClick={() => { setTab('login'); setErr(''); setShowResend(false); setResendMsg(''); }}>Log In</button>
             </div>
             {tab === 'signup' ? (
               <form className="auth-form" onSubmit={handleSignUp}>
@@ -1539,6 +1615,12 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
                 <input className="auth-input" type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
                 <input className="auth-input" type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required />
                 {err && <div className="auth-err">{err}</div>}
+                {showResend && (
+                  <button type="button" className="auth-resend-btn" onClick={handleResendConfirmation}>
+                    Resend confirmation email
+                  </button>
+                )}
+                {resendMsg && <div className="auth-resend-msg">{resendMsg}</div>}
                 <button className="auth-btn-submit" type="submit" disabled={loading}>{loading ? 'Logging in…' : 'Log In'}</button>
               </form>
             )}
@@ -1557,23 +1639,24 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       const [triesUsed, setTriesUsed] = React.useState(0);
 
       React.useEffect(() => {
-        async function init() {
-          const { data: { session } } = await supabase.auth.getSession();
+        supabase.auth.getSession().then(({ data: { session } }) => {
           if (session?.user) {
             setUser(session.user);
-            await loadTriesUsed(session.user.id);
-          }
-        }
-        init();
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-          if (session?.user) {
-            setUser(session.user);
-            await loadTriesUsed(session.user.id);
-          } else {
-            setUser(null);
-            setTriesUsed(0);
+            loadTriesUsed(session.user.id);
           }
         });
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          async (event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+              setUser(session.user);
+              await loadTriesUsed(session.user.id);
+              setShowAuthModal(false);
+            } else if (event === 'SIGNED_OUT') {
+              setUser(null);
+              setTriesUsed(0);
+            }
+          }
+        );
         return () => subscription.unsubscribe();
       }, []);
 
@@ -1653,6 +1736,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         }
       }
 
+      async function handleSignOut() {
+        await supabase.auth.signOut();
+      }
+
       function handleKey(e) {
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleOptimize();
       }
@@ -1674,6 +1761,14 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
               <span className="demo-dot" />
               try it live
             </div>
+            {user && (
+              <div className="demo-user-bar">
+                Signed in as {user.email}
+                {!limitReached && ` · ${2 - triesUsed} tr${(2 - triesUsed) === 1 ? 'y' : 'ies'} remaining`}
+                {' · '}
+                <button className="demo-signout-btn" onClick={handleSignOut}>Sign out</button>
+              </div>
+            )}
             <div className="demo-input-row">
               <textarea
                 className="demo-textarea"
@@ -1721,10 +1816,6 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             )}
 
             {error && <div className="demo-error">{error}</div>}
-
-            {user && !limitReached && triesUsed > 0 && (
-              <div className="demo-tries">{2 - triesUsed} tr{(2 - triesUsed) === 1 ? 'y' : 'ies'} remaining</div>
-            )}
           </div>
         </>
       );
@@ -1751,6 +1842,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             <a href="#classifier">classifier</a>
             <a href="#memory">memory</a>
             <a href="#install">install</a>
+            <a href="#pricing">pricing</a>
             <a href="/blog/">blog</a>
             <a href="/integrations/cursor.html">integrations</a>
             <a href="https://preprompt.beehiiv.com/subscribe" target="_blank" rel="noreferrer" style={{color: "var(--accent-ink)", fontWeight: 600}}>join beta</a>
@@ -2486,8 +2578,150 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       );
     }
 
+    /* ── Pricing ── */
+    function Pricing() {
+      const tiers = [
+        {
+          name: 'FREE',
+          sub: 'Open Source',
+          price: 'Free forever',
+          priceNote: 'Your Anthropic API costs',
+          features: [
+            'pip install preprompt',
+            'Bring your own API key',
+            'Claude Code + Cursor + Windsurf + Zed',
+            'Local memory (learns your stack)',
+            'Silent background operation',
+            'MIT license',
+          ],
+          cta: 'Install Free',
+          href: '#install',
+          highlight: false,
+        },
+        {
+          name: 'SOLO',
+          sub: '$8 / month',
+          price: '$8',
+          priceNote: 'per month',
+          features: [
+            'Everything in Free, plus:',
+            'No API key needed',
+            '500 optimizations / month',
+            'Web dashboard',
+            'Project profiles',
+            'Email support',
+          ],
+          cta: 'Get Started →',
+          href: '#beta',
+          highlight: true,
+        },
+        {
+          name: 'PRO',
+          sub: '$19 / month',
+          price: '$19',
+          priceNote: 'per month',
+          features: [
+            'Everything in Solo, plus:',
+            'Unlimited optimizations',
+            'All models (Haiku, Sonnet)',
+            'Configurable model per project',
+            'Priority support',
+            'Early access to new features',
+          ],
+          cta: 'Get Started →',
+          href: '#beta',
+          highlight: false,
+        },
+      ];
+
+      return (
+        <section id="pricing" style={{
+          padding: 'var(--pad-y) var(--shell-x)',
+          maxWidth: 'var(--maxw)',
+          margin: '0 auto',
+        }}>
+          <SectionHeader
+            kicker="09  pricing"
+            title="Simple pricing."
+            sub="Start free. Upgrade when you need more."
+          />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: '20px',
+            alignItems: 'start',
+          }}>
+            {tiers.map((tier) => (
+              <div key={tier.name} style={{
+                background: 'var(--bg)',
+                border: '1px solid var(--rule)',
+                borderTop: tier.highlight ? '3px solid var(--accent)' : '1px solid var(--rule)',
+                borderRadius: 'var(--radius)',
+                padding: '28px 24px',
+                boxShadow: tier.highlight ? '0 4px 20px rgba(0,0,0,0.07)' : 'none',
+                transform: tier.highlight ? 'translateY(-4px)' : 'none',
+              }}>
+                <div style={{fontFamily: 'var(--mono)', fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: '8px'}}>
+                  {tier.name}
+                </div>
+                <div style={{
+                  fontFamily: 'var(--mono)',
+                  fontWeight: 700,
+                  fontSize: tier.price === 'Free forever' ? '20px' : '36px',
+                  color: (tier.highlight || tier.name === 'PRO') ? 'var(--accent-ink)' : 'var(--ink)',
+                  lineHeight: 1,
+                  marginBottom: '4px',
+                }}>
+                  {tier.price}
+                </div>
+                <div style={{fontFamily: 'var(--mono)', fontSize: '12px', color: 'var(--ink-3)', marginBottom: '24px'}}>
+                  {tier.priceNote}
+                </div>
+                <ul style={{listStyle: 'none', padding: 0, margin: '0 0 28px', display: 'flex', flexDirection: 'column', gap: '9px'}}>
+                  {tier.features.map((f, i) => (
+                    <li key={i} style={{display: 'flex', alignItems: 'flex-start', gap: '8px', fontFamily: 'var(--mono)', fontSize: '12px', color: f.includes('plus:') ? 'var(--ink-3)' : 'var(--ink-2)'}}>
+                      {!f.includes('plus:') && (
+                        <span style={{color: 'var(--accent-ink)', flexShrink: 0, marginTop: '1px'}}>✓</span>
+                      )}
+                      {f}
+                    </li>
+                  ))}
+                </ul>
+                <a href={tier.href} style={{
+                  display: 'block',
+                  textAlign: 'center',
+                  padding: '10px 16px',
+                  background: tier.highlight ? 'var(--ink)' : 'transparent',
+                  color: tier.highlight ? 'var(--bg)' : 'var(--ink)',
+                  border: '1px solid var(--rule)',
+                  borderRadius: 'var(--radius)',
+                  fontFamily: 'var(--mono)',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  textDecoration: 'none',
+                }}>
+                  {tier.cta}
+                </a>
+              </div>
+            ))}
+          </div>
+        </section>
+      );
+    }
+
     /* ── App ── */
     function App() {
+      React.useEffect(() => {
+        const hash = window.location.hash;
+        if (hash && hash.includes('access_token')) {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+          });
+        }
+      }, []);
+
       return (
         <>
           <Nav />
@@ -2501,6 +2735,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           <Cost />
           <Install />
           <FAQ />
+          <Pricing />
           <Beta />
           <Footer />
         </>
