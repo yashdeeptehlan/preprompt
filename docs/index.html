@@ -1431,6 +1431,19 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
   text-decoration: underline;
 }
 .demo-signout-btn:hover { opacity: 0.7; }
+.demo-admin-badge {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-ink);
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in oklch, var(--accent) 40%, transparent);
+  border-radius: 3px;
+  padding: 1px 5px;
+  vertical-align: middle;
+}
   </style>
 
   <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -1526,9 +1539,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           if (error) { setErr(error.message); return; }
           const user = data.user;
           if (user) {
-            await supabase.from('user_profiles').upsert({
+            const { error: profileError } = await supabase.from('user_profiles').upsert({
               id: user.id, email: user.email, demo_tries_used: 0,
             });
+            if (profileError) console.error('Profile upsert failed:', profileError);
           }
           setSignupDone(true);
         } catch (ex) {
@@ -1637,6 +1651,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       const [user, setUser] = React.useState(null);
       const [showAuthModal, setShowAuthModal] = React.useState(false);
       const [triesUsed, setTriesUsed] = React.useState(0);
+      const [isAdmin, setIsAdmin] = React.useState(false);
 
       React.useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1654,6 +1669,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             } else if (event === 'SIGNED_OUT') {
               setUser(null);
               setTriesUsed(0);
+              setIsAdmin(false);
             }
           }
         );
@@ -1663,10 +1679,18 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       async function loadTriesUsed(userId) {
         const { data } = await supabase
           .from('user_profiles')
-          .select('demo_tries_used')
+          .select('demo_tries_used, plan')
           .eq('id', userId)
           .single();
-        if (data) setTriesUsed(data.demo_tries_used || 0);
+        if (data) {
+          if (data.plan === 'admin') {
+            setTriesUsed(0);
+            setIsAdmin(true);
+          } else {
+            setTriesUsed(data.demo_tries_used || 0);
+            setIsAdmin(false);
+          }
+        }
         return data?.demo_tries_used || 0;
       }
 
@@ -1693,7 +1717,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           }
           const data = await res.json();
           setResult(data);
-          if (session?.user?.id) {
+          if (session?.user?.id && !isAdmin) {
             const newTriesUsed = currentTriesUsed + 1;
             setTriesUsed(newTriesUsed);
             await supabase.from('user_profiles')
@@ -1714,7 +1738,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           setShowAuthModal(true);
           return;
         }
-        if (triesUsed >= 2) return;
+        if (!isAdmin && triesUsed >= 2) return;
         await runOptimize(session, triesUsed);
       }
 
@@ -1722,16 +1746,19 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         setShowAuthModal(false);
         setUser(session?.user || null);
         let currentTriesUsed = 0;
+        let adminUser = false;
         if (session?.user) {
           const { data } = await supabase
             .from('user_profiles')
-            .select('demo_tries_used')
+            .select('demo_tries_used, plan')
             .eq('id', session.user.id)
             .single();
-          currentTriesUsed = data?.demo_tries_used || 0;
+          adminUser = data?.plan === 'admin';
+          currentTriesUsed = adminUser ? 0 : (data?.demo_tries_used || 0);
+          setIsAdmin(adminUser);
           setTriesUsed(currentTriesUsed);
         }
-        if (currentTriesUsed < 2) {
+        if (adminUser || currentTriesUsed < 2) {
           await runOptimize(session, currentTriesUsed);
         }
       }
@@ -1744,7 +1771,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleOptimize();
       }
 
-      const limitReached = user && triesUsed >= 2;
+      const limitReached = user && !isAdmin && triesUsed >= 2;
       const badgeClass = result
         ? result.route === 'pass' ? 'demo-badge-pass'
           : result.route === 'clarify' ? 'demo-badge-clarify'
@@ -1764,8 +1791,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             {user && (
               <div className="demo-user-bar">
                 Signed in as {user.email}
-                {!limitReached && ` · ${2 - triesUsed} tr${(2 - triesUsed) === 1 ? 'y' : 'ies'} remaining`}
-                {' · '}
+                {isAdmin
+                  ? <>{' '}<span className="demo-admin-badge">ADMIN</span>{' · '}</>
+                  : (!limitReached && ` · ${2 - triesUsed} tr${(2 - triesUsed) === 1 ? 'y' : 'ies'} remaining · `)
+                }
                 <button className="demo-signout-btn" onClick={handleSignOut}>Sign out</button>
               </div>
             )}
