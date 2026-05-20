@@ -1510,6 +1510,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 
     /* ── Demo widget ── */
     const DEMO_API = 'https://preprompt-production-df10.up.railway.app/api/demo';
+    const DEMO_API_SECRET = '4498445d03a832967e77fb5234056613fb64269bd465a07a9ad6923f2a073160';
 
     /* ── Auth Modal ── */
     function AuthModal({ onClose, onAuthSuccess }) {
@@ -1700,7 +1701,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         setResult(null);
         setError(null);
         try {
-          const headers = { 'Content-Type': 'application/json' };
+          const headers = { 'Content-Type': 'application/json', 'X-PrePrompt-Key': DEMO_API_SECRET };
           if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
           const res = await fetch(DEMO_API, {
             method: 'POST',

@@ -9,10 +9,13 @@ import json
 import anthropic
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
@@ -21,7 +24,10 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 DEMO_LIMIT = 2
 
+limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="PrePrompt Demo API", version="0.1.8")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +35,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── Security dependencies ─────────────────────────────────────────────────────
+
+def verify_origin(request: Request):
+    origin = request.headers.get("origin") or request.headers.get("referer", "")
+    allowed = os.environ.get("ALLOWED_ORIGINS", "https://preprompt.org").split(",")
+    allowed = [o.strip() for o in allowed]
+    if "localhost" in origin or "127.0.0.1" in origin:
+        return True
+    if not any(origin.startswith(a) for a in allowed):
+        raise HTTPException(status_code=403, detail="Origin not allowed")
+    return True
+
+
+def verify_api_key(request: Request):
+    key = request.headers.get("X-PrePrompt-Key", "")
+    expected = os.environ.get("API_SECRET", "")
+    if not expected:
+        return True
+    if key != expected:
+        raise HTTPException(status_code=403, detail="Invalid API key")
+    return True
 
 # ── Inline classifier ─────────────────────────────────────────────────────────
 
@@ -180,7 +209,8 @@ def _get_client_ip(request: Request) -> str:
 
 
 @app.post("/api/demo")
-async def demo(body: DemoRequest, request: Request) -> JSONResponse:
+@limiter.limit("10/minute")
+async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin), _k=Depends(verify_api_key)) -> JSONResponse:
     prompt = body.prompt.strip()
     if not prompt:
         return JSONResponse({"error": "empty_prompt", "message": "Prompt cannot be empty."}, status_code=400)
