@@ -50,14 +50,6 @@ def verify_origin(request: Request):
     return True
 
 
-def verify_api_key(request: Request):
-    key = request.headers.get("X-PrePrompt-Key", "")
-    expected = os.environ.get("API_SECRET", "")
-    if not expected:
-        return True
-    if key != expected:
-        raise HTTPException(status_code=403, detail="Invalid API key")
-    return True
 
 # ── Inline classifier ─────────────────────────────────────────────────────────
 
@@ -210,7 +202,7 @@ def _get_client_ip(request: Request) -> str:
 
 @app.post("/api/demo")
 @limiter.limit("10/minute")
-async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin), _k=Depends(verify_api_key)) -> JSONResponse:
+async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -> JSONResponse:
     prompt = body.prompt.strip()
     if not prompt:
         return JSONResponse({"error": "empty_prompt", "message": "Prompt cannot be empty."}, status_code=400)
