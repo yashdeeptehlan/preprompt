@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en" class="theme-paper accent-amber density-comfy">
 <head>
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://fonts.googleapis.com https://unpkg.com https://www.googletagmanager.com;">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>preprompt — your prompts, battle-tested</title>
@@ -1454,13 +1455,17 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 <body>
   <div id="app"></div>
 
+  <script>
+    window.SUPABASE_URL = 'https://huepsixuprproppfumhi.supabase.co';
+    window.SUPABASE_KEY = 'sb_publishable__R1QDzp3_jzF-GZLNka6bQ_smMa6fBs';
+    window.DEMO_API = 'https://preprompt-production-df10.up.railway.app/api/demo';
+    window.BACKEND = 'https://preprompt-production-df10.up.railway.app';
+    window.supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_KEY);
+  </script>
+
   <script type="text/babel">
     const { useState } = React;
-
-    /* ── Supabase ── */
-    const SUPABASE_URL = 'https://huepsixuprproppfumhi.supabase.co';
-    const SUPABASE_KEY = 'sb_publishable__R1QDzp3_jzF-GZLNka6bQ_smMa6fBs';
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = window.supabase;
 
     /* ── Logo ── */
     function LogoMark({ size = 28, stroke = 'currentColor', fill = 'currentColor', accent = null }) {
@@ -1509,8 +1514,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     }
 
     /* ── Demo widget ── */
-    const DEMO_API = 'https://preprompt-production-df10.up.railway.app/api/demo';
-    const BACKEND = 'https://preprompt-production-df10.up.railway.app';
+    const DEMO_API = window.DEMO_API;
+    const BACKEND = window.BACKEND;
 
     /* ── Success page ── */
     function SuccessPage() {
@@ -1872,8 +1877,11 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         setUser(null);
         setTriesUsed(0);
         setIsAdmin(false);
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('sb-') || k.includes('supabase')) localStorage.removeItem(k);
+        });
         if (onSignOut) await onSignOut();
-        else await supabase.auth.signOut();
+        else await supabase.auth.signOut({ scope: 'local' });
       }
 
       async function handleCheckout(plan) {
@@ -2907,7 +2915,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       }, []);
 
       const handleSignOut = async () => {
-        await supabase.auth.signOut();
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('sb-') || k.includes('supabase')) localStorage.removeItem(k);
+        });
+        await supabase.auth.signOut({ scope: 'local' });
       };
 
       async function handleCheckout(plan) {
