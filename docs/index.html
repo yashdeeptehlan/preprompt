@@ -1733,7 +1733,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       );
     }
 
-    function DemoWidget() {
+    function DemoWidget({ onSignOut }) {
       const [prompt, setPrompt] = React.useState('');
       const [loading, setLoading] = React.useState(false);
       const [result, setResult] = React.useState(null);
@@ -1786,13 +1786,15 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       }
 
       async function runOptimize(session, currentTriesUsed) {
+        console.log('runOptimize called', {user: !!user, prompt, triesUsed});
         if (!prompt.trim() || loading) return;
         setLoading(true);
         setResult(null);
         setError(null);
         try {
           const headers = { 'Content-Type': 'application/json' };
-          if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`;
+          const token = session?.access_token;
+          if (token) headers['Authorization'] = `Bearer ${token}`;
           const res = await fetch(DEMO_API, {
             method: 'POST',
             headers,
@@ -1867,7 +1869,11 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       }
 
       async function handleSignOut() {
-        await supabase.auth.signOut();
+        setUser(null);
+        setTriesUsed(0);
+        setIsAdmin(false);
+        if (onSignOut) await onSignOut();
+        else await supabase.auth.signOut();
       }
 
       async function handleCheckout(plan) {
@@ -1883,7 +1889,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             body: JSON.stringify({plan, user_id: user.id, email: user.email}),
           });
           const data = await res.json();
-          if (data.checkout_url) window.location.href = data.checkout_url;
+          if (data.checkout_url) {
+            sessionStorage.setItem('preprompt_checkout_plan', plan);
+            window.location.href = data.checkout_url;
+          }
         } catch (e) {
           console.error('Checkout error:', e);
         }
@@ -2050,7 +2059,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     }
 
     /* ── Hero ── */
-    function Hero() {
+    function Hero({ onSignOut }) {
       return (
         <header className="hero">
           <div className="hero-grid">
@@ -2079,7 +2088,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
                 </a>
               </div>
 
-              <DemoWidget />
+              <DemoWidget onSignOut={onSignOut} />
 
               <div className="hero-meta">
                 <div><span className="hero-meta-k">latency</span><span className="hero-meta-v">&lt; 1ms</span></div>
@@ -2897,7 +2906,12 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         }
       }, []);
 
+      const handleSignOut = async () => {
+        await supabase.auth.signOut();
+      };
+
       async function handleCheckout(plan) {
+        console.log('handleCheckout called', plan);
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           setAppPendingCheckout(plan);
@@ -2911,7 +2925,10 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             body: JSON.stringify({plan, user_id: session.user.id, email: session.user.email}),
           });
           const data = await res.json();
-          if (data.checkout_url) window.location.href = data.checkout_url;
+          if (data.checkout_url) {
+            sessionStorage.setItem('preprompt_checkout_plan', plan);
+            window.location.href = data.checkout_url;
+          }
         } catch (e) {
           console.error('Checkout error:', e);
         }
@@ -2938,7 +2955,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             <AuthModal onClose={() => setAppAuthModal(false)} onAuthSuccess={handleAppAuthSuccess} />
           )}
           <Nav />
-          <Hero />
+          <Hero onSignOut={handleSignOut} />
           <SocialProof />
           <BeforeAfter />
           <HowItWorks />

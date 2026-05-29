@@ -339,8 +339,8 @@ async def create_checkout_session(body: CheckoutRequest, _o=Depends(verify_origi
             mode="subscription",
             customer_email=body.email,
             line_items=[{"price": price_id, "quantity": 1}],
-            success_url="https://preprompt.org/success?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url="https://preprompt.org/#pricing",
+            success_url="https://preprompt.org/success.html?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="https://preprompt.org",
             metadata={"user_id": body.user_id, "plan": body.plan},
             subscription_data={"metadata": {"user_id": body.user_id, "plan": body.plan}},
         )
