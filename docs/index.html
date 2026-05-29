@@ -1510,6 +1510,97 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 
     /* ── Demo widget ── */
     const DEMO_API = 'https://preprompt-production-df10.up.railway.app/api/demo';
+    const BACKEND = 'https://preprompt-production-df10.up.railway.app';
+
+    /* ── Success page ── */
+    function SuccessPage() {
+      const [status, setStatus] = React.useState('loading');
+      const [plan, setPlan] = React.useState('');
+      const [email, setEmail] = React.useState('');
+
+      React.useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session_id');
+        if (!sessionId) { setStatus('error'); return; }
+        fetch(`${BACKEND}/api/verify-session?session_id=${encodeURIComponent(sessionId)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              setPlan(data.plan);
+              setEmail(data.email);
+              setStatus('success');
+            } else {
+              setStatus('error');
+            }
+          })
+          .catch(() => setStatus('error'));
+      }, []);
+
+      const planLabel = plan === 'pro' ? 'Pro' : 'Solo';
+
+      if (status === 'loading') return (
+        <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',
+                     background:'#f7f3ee',fontFamily:'JetBrains Mono, monospace',color:'#2a2520',fontSize:'14px'}}>
+          Verifying your subscription…
+        </div>
+      );
+
+      if (status === 'error') return (
+        <div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',
+                     background:'#f7f3ee',fontFamily:'JetBrains Mono, monospace',color:'#2a2520',
+                     flexDirection:'column',gap:'12px',fontSize:'14px'}}>
+          <div>Something went wrong verifying your payment.</div>
+          <a href="/" style={{color:'#c49a3c',textDecoration:'none'}}>← Back to preprompt.org</a>
+        </div>
+      );
+
+      return (
+        <div style={{minHeight:'100vh',background:'#f7f3ee',fontFamily:'JetBrains Mono, monospace',
+                     color:'#2a2520',display:'flex',flexDirection:'column',alignItems:'center',
+                     justifyContent:'center',padding:'40px 24px'}}>
+          <div style={{maxWidth:'520px',width:'100%'}}>
+            <div style={{fontSize:'48px',marginBottom:'16px',color:'#c49a3c'}}>✓</div>
+            <h1 style={{fontFamily:'JetBrains Mono, monospace',fontWeight:700,fontSize:'clamp(28px,5vw,40px)',
+                        margin:'0 0 8px',lineHeight:1.1}}>You're in.</h1>
+            <p style={{fontSize:'16px',color:'#6b6560',marginBottom:'8px'}}>
+              Welcome to PrePrompt {planLabel}.
+            </p>
+            {email && (
+              <p style={{fontSize:'13px',color:'#6b6560',marginBottom:'40px'}}>
+                Check <strong>{email}</strong> for your welcome email.
+              </p>
+            )}
+
+            <div style={{display:'flex',flexDirection:'column',gap:'16px',marginBottom:'40px'}}>
+              <div style={{border:'1px solid #ddd8d0',borderRadius:'8px',padding:'20px 24px'}}>
+                <div style={{fontSize:'11px',letterSpacing:'0.08em',textTransform:'uppercase',
+                             color:'#6b6560',marginBottom:'12px'}}>Get started now</div>
+                {['pip install preprompt','preprompt-install'].map(cmd => (
+                  <div key={cmd} style={{background:'#2a2520',color:'#f7f3ee',borderRadius:'5px',
+                                         padding:'8px 14px',fontFamily:'JetBrains Mono, monospace',
+                                         fontSize:'13px',marginBottom:'8px'}}>
+                    $ {cmd}
+                  </div>
+                ))}
+              </div>
+              <div style={{border:'1px solid #ddd8d0',borderRadius:'8px',padding:'20px 24px'}}>
+                <div style={{fontSize:'11px',letterSpacing:'0.08em',textTransform:'uppercase',
+                             color:'#6b6560',marginBottom:'12px'}}>Your dashboard</div>
+                <a href="https://preprompt.org" style={{color:'#c49a3c',fontWeight:600,
+                                                        textDecoration:'none',fontSize:'14px'}}>
+                  preprompt.org →
+                </a>
+              </div>
+            </div>
+
+            <a href="/" style={{color:'#6b6560',textDecoration:'none',fontSize:'13px'}}>
+              ← Back to preprompt.org
+            </a>
+          </div>
+        </div>
+      );
+    }
+
     /* ── Auth Modal ── */
     function AuthModal({ onClose, onAuthSuccess }) {
       const [tab, setTab] = React.useState('signup');
@@ -1651,6 +1742,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       const [showAuthModal, setShowAuthModal] = React.useState(false);
       const [triesUsed, setTriesUsed] = React.useState(0);
       const [isAdmin, setIsAdmin] = React.useState(false);
+      const [pendingCheckout, setPendingCheckout] = React.useState(null);
 
       React.useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => {
@@ -1757,6 +1849,18 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           setIsAdmin(adminUser);
           setTriesUsed(currentTriesUsed);
         }
+        if (pendingCheckout) {
+          const checkoutPlan = pendingCheckout;
+          setPendingCheckout(null);
+          const res = await fetch(`${BACKEND}/api/create-checkout-session`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan: checkoutPlan, user_id: session.user.id, email: session.user.email}),
+          });
+          const checkoutData = await res.json();
+          if (checkoutData.checkout_url) window.location.href = checkoutData.checkout_url;
+          return;
+        }
         if (adminUser || currentTriesUsed < 2) {
           await runOptimize(session, currentTriesUsed);
         }
@@ -1764,6 +1868,25 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 
       async function handleSignOut() {
         await supabase.auth.signOut();
+      }
+
+      async function handleCheckout(plan) {
+        if (!user) {
+          setPendingCheckout(plan);
+          setShowAuthModal(true);
+          return;
+        }
+        try {
+          const res = await fetch(`${BACKEND}/api/create-checkout-session`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan, user_id: user.id, email: user.email}),
+          });
+          const data = await res.json();
+          if (data.checkout_url) window.location.href = data.checkout_url;
+        } catch (e) {
+          console.error('Checkout error:', e);
+        }
       }
 
       function handleKey(e) {
@@ -2607,7 +2730,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
     }
 
     /* ── Pricing ── */
-    function Pricing() {
+    function Pricing({ onCheckout }) {
       const tiers = [
         {
           name: 'FREE',
@@ -2640,7 +2763,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             'Email support',
           ],
           cta: 'Get Started →',
-          href: '#beta',
+          href: null,
+          checkoutPlan: 'solo',
           highlight: true,
         },
         {
@@ -2657,7 +2781,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
             'Early access to new features',
           ],
           cta: 'Get Started →',
-          href: '#beta',
+          href: null,
+          checkoutPlan: 'pro',
           highlight: false,
         },
       ];
@@ -2715,21 +2840,40 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
                     </li>
                   ))}
                 </ul>
-                <a href={tier.href} style={{
-                  display: 'block',
-                  textAlign: 'center',
-                  padding: '10px 16px',
-                  background: tier.highlight ? 'var(--ink)' : 'transparent',
-                  color: tier.highlight ? 'var(--bg)' : 'var(--ink)',
-                  border: '1px solid var(--rule)',
-                  borderRadius: 'var(--radius)',
-                  fontFamily: 'var(--mono)',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  textDecoration: 'none',
-                }}>
-                  {tier.cta}
-                </a>
+                {tier.href ? (
+                  <a href={tier.href} style={{
+                    display: 'block',
+                    textAlign: 'center',
+                    padding: '10px 16px',
+                    background: 'transparent',
+                    color: 'var(--ink)',
+                    border: '1px solid var(--rule)',
+                    borderRadius: 'var(--radius)',
+                    fontFamily: 'var(--mono)',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    textDecoration: 'none',
+                  }}>
+                    {tier.cta}
+                  </a>
+                ) : (
+                  <button onClick={() => onCheckout && onCheckout(tier.checkoutPlan)} style={{
+                    display: 'block',
+                    width: '100%',
+                    textAlign: 'center',
+                    padding: '10px 16px',
+                    background: tier.highlight ? 'var(--ink)' : 'transparent',
+                    color: tier.highlight ? 'var(--bg)' : 'var(--ink)',
+                    border: '1px solid var(--rule)',
+                    borderRadius: 'var(--radius)',
+                    fontFamily: 'var(--mono)',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}>
+                    {tier.cta}
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -2739,6 +2883,9 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
 
     /* ── App ── */
     function App() {
+      const [appAuthModal, setAppAuthModal] = React.useState(false);
+      const [appPendingCheckout, setAppPendingCheckout] = React.useState(null);
+
       React.useEffect(() => {
         const hash = window.location.hash;
         if (hash && hash.includes('access_token')) {
@@ -2750,8 +2897,46 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
         }
       }, []);
 
+      async function handleCheckout(plan) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          setAppPendingCheckout(plan);
+          setAppAuthModal(true);
+          return;
+        }
+        try {
+          const res = await fetch(`${BACKEND}/api/create-checkout-session`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan, user_id: session.user.id, email: session.user.email}),
+          });
+          const data = await res.json();
+          if (data.checkout_url) window.location.href = data.checkout_url;
+        } catch (e) {
+          console.error('Checkout error:', e);
+        }
+      }
+
+      async function handleAppAuthSuccess(session) {
+        setAppAuthModal(false);
+        if (appPendingCheckout && session?.user) {
+          const plan = appPendingCheckout;
+          setAppPendingCheckout(null);
+          const res = await fetch(`${BACKEND}/api/create-checkout-session`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan, user_id: session.user.id, email: session.user.email}),
+          });
+          const data = await res.json();
+          if (data.checkout_url) window.location.href = data.checkout_url;
+        }
+      }
+
       return (
         <>
+          {appAuthModal && (
+            <AuthModal onClose={() => setAppAuthModal(false)} onAuthSuccess={handleAppAuthSuccess} />
+          )}
           <Nav />
           <Hero />
           <SocialProof />
@@ -2763,7 +2948,7 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
           <Cost />
           <Install />
           <FAQ />
-          <Pricing />
+          <Pricing onCheckout={handleCheckout} />
           <Beta />
           <Footer />
         </>
@@ -2778,7 +2963,8 @@ section { padding: var(--pad-y) var(--shell-x); max-width: var(--maxw); margin: 
       }
     }
 
-    ReactDOM.createRoot(document.getElementById('app')).render(<App />);
+    const isSuccessPage = window.location.pathname === '/success' || window.location.pathname === '/success.html';
+    ReactDOM.createRoot(document.getElementById('app')).render(isSuccessPage ? <SuccessPage /> : <App />);
   </script>
 </body>
 </html>

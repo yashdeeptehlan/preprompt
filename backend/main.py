@@ -8,6 +8,8 @@ import os
 import json
 import anthropic
 import httpx
+import stripe
+from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +24,13 @@ load_dotenv()
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_SOLO_PRICE_ID = os.environ.get("STRIPE_SOLO_PRICE_ID", "")
+STRIPE_PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 DEMO_LIMIT = 2
+
+stripe.api_key = STRIPE_SECRET_KEY
 
 limiter = Limiter(key_func=get_remote_address)
 app = FastAPI(title="PrePrompt Demo API", version="0.1.8")
@@ -48,7 +56,6 @@ def verify_origin(request: Request):
     if not any(origin.startswith(a) for a in allowed):
         raise HTTPException(status_code=403, detail="Origin not allowed")
     return True
-
 
 
 # ── Inline classifier ─────────────────────────────────────────────────────────
@@ -187,10 +194,78 @@ async def _upsert_usage(key: str) -> int:
     return 1
 
 
+# ── Email ─────────────────────────────────────────────────────────────────────
+
+async def send_thankyou_email(email: str, plan: str) -> None:
+    plan_name = "Solo" if plan == "solo" else "Pro"
+    price = "$8/month" if plan == "solo" else "$19/month"
+
+    try:
+        ac = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        prompt = (
+            f"Write a warm, genuine thank-you email for someone who just subscribed to "
+            f"PrePrompt {plan_name} plan at {price}. "
+            "PrePrompt is an MCP server that intercepts and optimizes AI coding prompts "
+            "before they reach the LLM, making AI tools more reliable.\n\n"
+            f"The email should:\n"
+            "- Thank them genuinely (not corporate)\n"
+            f"- Briefly explain what they get with {plan_name}\n"
+            "- Give them one quick tip to get started: pip install preprompt && preprompt-install\n"
+            "- Mention the dashboard at preprompt.org\n"
+            "- Sign off as \"Yashdeep, founder of PrePrompt\"\n"
+            "- Be concise (under 200 words)\n"
+            "- Plain text, no markdown\n\n"
+            "Return ONLY the email body, no subject line."
+        )
+        response = ac.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        email_body = response.content[0].text.strip()
+    except Exception as e:
+        email_body = (
+            f"Hi,\n\nThank you for subscribing to PrePrompt {plan_name}!\n\n"
+            "Get started: pip install preprompt && preprompt-install\n\n"
+            "— Yashdeep, founder of PrePrompt"
+        )
+        print(f"[PrePrompt] Email generation failed: {e}")
+
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    if not resend_key:
+        print(f"[PrePrompt] Would send email to {email}:\n{email_body}")
+        return
+
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": "Yashdeep from PrePrompt <yashdeep@preprompt.org>",
+                    "to": [email],
+                    "subject": f"Welcome to PrePrompt {plan_name} 🚀",
+                    "text": email_body,
+                },
+                timeout=10,
+            )
+    except Exception as e:
+        print(f"[PrePrompt] Email send failed: {e}")
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 class DemoRequest(BaseModel):
     prompt: str
+
+
+class CheckoutRequest(BaseModel):
+    plan: str
+    user_id: str
+    email: str
 
 
 def _get_client_ip(request: Request) -> str:
@@ -245,6 +320,95 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
         "was_optimized": was_optimized,
         "tries_remaining": tries_remaining,
     })
+
+
+@app.post("/api/create-checkout-session")
+async def create_checkout_session(body: CheckoutRequest, _o=Depends(verify_origin)) -> JSONResponse:
+    if body.plan not in ("solo", "pro"):
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+
+    price_id = STRIPE_SOLO_PRICE_ID if body.plan == "solo" else STRIPE_PRO_PRICE_ID
+    if not price_id:
+        raise HTTPException(status_code=503, detail="Price not configured")
+
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="subscription",
+            customer_email=body.email,
+            line_items=[{"price": price_id, "quantity": 1}],
+            success_url="https://preprompt.org/success?session_id={CHECKOUT_SESSION_ID}",
+            cancel_url="https://preprompt.org/#pricing",
+            metadata={"user_id": body.user_id, "plan": body.plan},
+            subscription_data={"metadata": {"user_id": body.user_id, "plan": body.plan}},
+        )
+        return JSONResponse({"checkout_url": session.url})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/webhook")
+async def stripe_webhook(request: Request) -> JSONResponse:
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+
+    if STRIPE_WEBHOOK_SECRET:
+        try:
+            event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid signature")
+    else:
+        event = json.loads(payload)
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        user_id = session.get("metadata", {}).get("user_id")
+        plan = session.get("metadata", {}).get("plan", "solo")
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+        customer_email = session.get("customer_details", {}).get("email")
+
+        if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
+            async with httpx.AsyncClient() as client:
+                await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles?id=eq.{user_id}",
+                    headers={
+                        **_sb_headers(),
+                        "Content-Type": "application/json",
+                        "Prefer": "return=minimal",
+                    },
+                    json={
+                        "plan": plan,
+                        "stripe_customer_id": customer_id,
+                        "stripe_subscription_id": subscription_id,
+                        "subscription_status": "active",
+                        "subscription_started_at": datetime.utcnow().isoformat(),
+                        "demo_tries_used": 0,
+                    },
+                    timeout=10,
+                )
+
+        if customer_email:
+            await send_thankyou_email(customer_email, plan)
+
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/verify-session")
+async def verify_session(session_id: str) -> JSONResponse:
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=503, detail="Payments not configured")
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        return JSONResponse({
+            "success": True,
+            "plan": session.metadata.get("plan", "solo"),
+            "email": session.customer_details.email if session.customer_details else "",
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/health")
