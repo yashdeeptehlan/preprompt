@@ -197,48 +197,41 @@ async def _upsert_usage(key: str) -> int:
 # ── Email ─────────────────────────────────────────────────────────────────────
 
 async def send_thankyou_email(email: str, plan: str) -> None:
+    resend_key = os.environ.get("RESEND_API_KEY", "")
+    if not resend_key:
+        print(f"[PrePrompt] RESEND_API_KEY not set, skipping email to {email}")
+        return
+
     plan_name = "Solo" if plan == "solo" else "Pro"
     price = "$8/month" if plan == "solo" else "$19/month"
 
-    try:
-        ac = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        prompt = (
-            f"Write a warm, genuine thank-you email for someone who just subscribed to "
-            f"PrePrompt {plan_name} plan at {price}. "
-            "PrePrompt is an MCP server that intercepts and optimizes AI coding prompts "
-            "before they reach the LLM, making AI tools more reliable.\n\n"
-            f"The email should:\n"
-            "- Thank them genuinely (not corporate)\n"
-            f"- Briefly explain what they get with {plan_name}\n"
-            "- Give them one quick tip to get started: pip install preprompt && preprompt-install\n"
-            "- Mention the dashboard at preprompt.org\n"
-            "- Sign off as \"Yashdeep, founder of PrePrompt\"\n"
-            "- Be concise (under 200 words)\n"
-            "- Plain text, no markdown\n\n"
-            "Return ONLY the email body, no subject line."
-        )
-        response = ac.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=400,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        email_body = response.content[0].text.strip()
-    except Exception as e:
-        email_body = (
-            f"Hi,\n\nThank you for subscribing to PrePrompt {plan_name}!\n\n"
-            "Get started: pip install preprompt && preprompt-install\n\n"
-            "— Yashdeep, founder of PrePrompt"
-        )
-        print(f"[PrePrompt] Email generation failed: {e}")
+    email_body = f"""Hey,
 
-    resend_key = os.environ.get("RESEND_API_KEY", "")
-    if not resend_key:
-        print(f"[PrePrompt] Would send email to {email}:\n{email_body}")
-        return
+Welcome to PrePrompt {plan_name} — glad you're here.
+
+You're now set up with {price} worth of prompt optimization. Here's how to get started:
+
+1. Install PrePrompt:
+
+   pip install preprompt
+
+2. Run setup:
+
+   preprompt-install
+
+That's it. PrePrompt will now silently intercept and optimize your prompts in Claude Code and Cursor before they reach the model.
+
+If you run into anything, just reply to this email.
+
+— Yashdeep
+
+Founder, PrePrompt
+
+preprompt.org"""
 
     try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
                 "https://api.resend.com/emails",
                 headers={
                     "Authorization": f"Bearer {resend_key}",
@@ -247,13 +240,13 @@ async def send_thankyou_email(email: str, plan: str) -> None:
                 json={
                     "from": "Yashdeep from PrePrompt <yashdeep@preprompt.org>",
                     "to": [email],
-                    "subject": f"Welcome to PrePrompt {plan_name} 🚀",
+                    "subject": f"Welcome to PrePrompt {plan_name}",
                     "text": email_body,
                 },
-                timeout=10,
             )
+            print(f"[PrePrompt] Email sent to {email}: {response.status_code} {response.text}")
     except Exception as e:
-        print(f"[PrePrompt] Email send failed: {e}")
+        print(f"[PrePrompt] Email failed for {email}: {e}")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -393,7 +386,10 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                 )
 
         if customer_email:
-            await send_thankyou_email(customer_email, plan)
+            try:
+                await send_thankyou_email(customer_email, plan)
+            except Exception as email_err:
+                print(f"[PrePrompt] Email error: {email_err}")
 
     return JSONResponse({"status": "ok"})
 
