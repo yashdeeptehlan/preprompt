@@ -356,41 +356,47 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         event = json.loads(payload)
 
     if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        metadata = dict(session.metadata) if session.metadata else {}
-        user_id = metadata.get("user_id")
-        plan = metadata.get("plan", "solo")
-        customer_id = session.customer
-        subscription_id = session.subscription
-        customer_email = session.customer_details.email if session.customer_details else None
+        try:
+            session = event["data"]["object"]
+            metadata = session.metadata.to_dict() if session.metadata else {}
+            user_id = metadata.get("user_id")
+            plan = metadata.get("plan", "solo")
+            customer_id = session.customer
+            subscription_id = session.subscription
+            customer_email = session.customer_details.email if session.customer_details else None
 
-        if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
-            async with httpx.AsyncClient() as client:
-                await client.post(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles",
-                    headers={
-                        "apikey": SUPABASE_SECRET_KEY,
-                        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
-                        "Content-Type": "application/json",
-                        "Prefer": "resolution=merge-duplicates",
-                    },
-                    json={
-                        "id": user_id,
-                        "plan": plan,
-                        "stripe_customer_id": customer_id,
-                        "stripe_subscription_id": subscription_id,
-                        "subscription_status": "active",
-                        "subscription_started_at": datetime.utcnow().isoformat(),
-                        "demo_tries_used": 0,
-                    },
-                    timeout=10,
-                )
+            if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        f"{SUPABASE_URL}/rest/v1/user_profiles",
+                        headers={
+                            "apikey": SUPABASE_SECRET_KEY,
+                            "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+                            "Content-Type": "application/json",
+                            "Prefer": "resolution=merge-duplicates",
+                        },
+                        json={
+                            "id": user_id,
+                            "plan": plan,
+                            "stripe_customer_id": customer_id,
+                            "stripe_subscription_id": subscription_id,
+                            "subscription_status": "active",
+                            "subscription_started_at": datetime.utcnow().isoformat(),
+                            "demo_tries_used": 0,
+                        },
+                        timeout=10,
+                    )
 
-        if customer_email:
-            try:
-                await send_thankyou_email(customer_email, plan)
-            except Exception as email_err:
-                print(f"[PrePrompt] Email error: {email_err}")
+            if customer_email:
+                try:
+                    await send_thankyou_email(customer_email, plan)
+                except Exception as email_err:
+                    print(f"[PrePrompt] Email error: {email_err}")
+
+        except Exception as webhook_err:
+            print(f"[PrePrompt] Webhook processing error: {webhook_err}")
+            import traceback
+            traceback.print_exc()
 
     return JSONResponse({"status": "ok"})
 
