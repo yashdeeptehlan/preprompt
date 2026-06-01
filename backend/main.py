@@ -372,14 +372,16 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
         if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
             async with httpx.AsyncClient() as client:
-                await client.patch(
-                    f"{SUPABASE_URL}/rest/v1/user_profiles?id=eq.{user_id}",
+                await client.post(
+                    f"{SUPABASE_URL}/rest/v1/user_profiles",
                     headers={
-                        **_sb_headers(),
+                        "apikey": SUPABASE_SECRET_KEY,
+                        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
                         "Content-Type": "application/json",
-                        "Prefer": "return=minimal",
+                        "Prefer": "resolution=merge-duplicates",
                     },
                     json={
+                        "id": user_id,
                         "plan": plan,
                         "stripe_customer_id": customer_id,
                         "stripe_subscription_id": subscription_id,
