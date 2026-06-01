@@ -33,7 +33,7 @@ DEMO_LIMIT = 2
 stripe.api_key = STRIPE_SECRET_KEY
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="PrePrompt Demo API", version="0.1.8")
+app = FastAPI(title="PrePrompt Demo API", version="0.1.9")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -423,4 +423,4 @@ async def verify_session(session_id: str) -> JSONResponse:
 
 @app.get("/health")
 async def health() -> JSONResponse:
-    return JSONResponse({"status": "ok", "version": "0.1.8"})
+    return JSONResponse({"status": "ok", "version": "0.1.9"})
