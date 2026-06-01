@@ -401,14 +401,22 @@ async def verify_session(session_id: str) -> JSONResponse:
     if not STRIPE_SECRET_KEY:
         raise HTTPException(status_code=503, detail="Payments not configured")
     try:
-        session = stripe.checkout.Session.retrieve(session_id)
+        import logging
+        logging.info(f"Verifying session: {session_id[:20]}...")
+        session = stripe.checkout.Session.retrieve(
+            session_id,
+            expand=['customer_details', 'metadata']
+        )
+        logging.info(f"Session status: {session.status}, payment: {session.payment_status}")
         return JSONResponse({
             "success": True,
-            "plan": session.metadata.get("plan", "solo"),
+            "plan": session.metadata.get("plan", "solo") if session.metadata else "solo",
             "email": session.customer_details.email if session.customer_details else "",
         })
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"Error: {type(e).__name__}: {str(e)}")
 
 
 @app.get("/health")
