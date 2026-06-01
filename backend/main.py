@@ -403,10 +403,7 @@ async def verify_session(session_id: str) -> JSONResponse:
     try:
         import logging
         logging.info(f"Verifying session: {session_id[:20]}...")
-        session = stripe.checkout.Session.retrieve(
-            session_id,
-            expand=['customer_details', 'metadata']
-        )
+        session = stripe.checkout.Session.retrieve(session_id)
         logging.info(f"Session status: {session.status}, payment: {session.payment_status}")
         return JSONResponse({
             "success": True,
