@@ -357,11 +357,12 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
-        user_id = session.get("metadata", {}).get("user_id")
-        plan = session.get("metadata", {}).get("plan", "solo")
-        customer_id = session.get("customer")
-        subscription_id = session.get("subscription")
-        customer_email = session.get("customer_details", {}).get("email")
+        metadata = dict(session.metadata) if session.metadata else {}
+        user_id = metadata.get("user_id")
+        plan = metadata.get("plan", "solo")
+        customer_id = session.customer
+        subscription_id = session.subscription
+        customer_email = session.customer_details.email if session.customer_details else None
 
         if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
             async with httpx.AsyncClient() as client:
