@@ -407,8 +407,8 @@ async def verify_session(session_id: str) -> JSONResponse:
         logging.info(f"Session status: {session.status}, payment: {session.payment_status}")
         return JSONResponse({
             "success": True,
-            "plan": session.metadata.get("plan", "solo") if session.metadata else "solo",
-            "email": session.customer_details.email if session.customer_details else "",
+            "plan": (session.metadata["plan"] if session.metadata and "plan" in session.metadata else "solo"),
+            "email": (session.customer_details.email if session.customer_details and hasattr(session.customer_details, 'email') else ""),
         })
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
