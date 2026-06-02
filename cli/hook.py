@@ -109,9 +109,16 @@ def main() -> None:
         print(json.dumps({"prompt": prompt}))
 
     try:
-        # Load API key from ~/.preprompt/.env — works for pip-installed users
+        # Dev mode: add project root to sys.path so mcp_server is importable
+        # without pip install. Safe no-op when running as a pip-installed package.
+        _project_root = str(Path(__file__).resolve().parent.parent)
+        if _project_root not in sys.path:
+            sys.path.insert(0, _project_root)
+
+        # Load .env: pip user path first, then dev-mode project root as fallback
         from dotenv import load_dotenv
         load_dotenv(Path.home() / ".preprompt" / ".env")
+        load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
         from mcp_server.classifier import route_prompt, get_clarifying_question
         routing = route_prompt(prompt, history, turn)
