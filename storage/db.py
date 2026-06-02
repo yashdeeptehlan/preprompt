@@ -375,21 +375,21 @@ def get_feedback_stats() -> dict:
 
 # ── Sidecar flush ──────────────────────────────────────────────────────────────
 
-def flush_pending_hook_events() -> int:
+def flush_pending_hook_events() -> dict:
     """Read all JSON sidecar files from ~/.preprompt/pending/, insert into
-    prompt_history, delete each file. Returns count of events flushed.
+    prompt_history, delete each file.
 
-    Called by the MCP server at the start of optimize_prompt() so hook events
-    are persisted without the hook ever touching the DB directly.
-    Also runs update_memory_from_prompt() on each flushed event so Claude Code
-    sessions contribute to stack memory.
+    Returns {"count": N, "prompts": [{"prompt": str, "history": list}, ...]}
+    so callers can run update_memory_from_prompt without storage importing
+    mcp_server (which would create a circular dependency).
     """
     pending_dir = Path.home() / ".preprompt" / "pending"
     if not pending_dir.exists():
-        return 0
+        return {"count": 0, "prompts": []}
 
     conn = _get_connection()
     flushed = 0
+    prompts = []
     for sidecar_path in pending_dir.glob("*.json"):
         try:
             data = json.loads(sidecar_path.read_text())
@@ -411,11 +411,7 @@ def flush_pending_hook_events() -> int:
             conn.commit()
             sidecar_path.unlink()
             flushed += 1
-            try:
-                from mcp_server.extractor import update_memory_from_prompt
-                update_memory_from_prompt(data["original_prompt"], [])
-            except Exception:
-                pass
+            prompts.append({"prompt": data["original_prompt"], "history": []})
         except Exception:
             pass
-    return flushed
+    return {"count": flushed, "prompts": prompts}

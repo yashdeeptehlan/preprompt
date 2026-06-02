@@ -44,7 +44,12 @@ def optimize_prompt(
       score            : int   — classifier score (0–100)
       reason           : str   — brief explanation of what changed (or why not)
     """
-    flush_pending_hook_events()
+    flush_result = flush_pending_hook_events()
+    for item in flush_result.get("prompts", []):
+        try:
+            update_memory_from_prompt(item["prompt"], item.get("history", []))
+        except Exception:
+            pass
     routing = route_prompt(user_prompt, conversation_history, turn_number)
     route = routing["route"]
     score = routing["quality_score"]

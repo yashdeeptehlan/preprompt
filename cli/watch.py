@@ -60,7 +60,8 @@ def watch_cmd() -> None:
 
     try:
         from storage.db import flush_pending_hook_events
-        flushed = flush_pending_hook_events()
+        result = flush_pending_hook_events()
+        flushed = result["count"] if isinstance(result, dict) else result
         if flushed > 0:
             print(f"  ↑ flushed {flushed} pending events from hook")
     except Exception:
