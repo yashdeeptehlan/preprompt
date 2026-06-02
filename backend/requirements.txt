@@ -1,5 +1,3 @@
-# Note: backend/ also imports from mcp_server/ and storage/ via sys.path
-# These are in the parent directory (repo root)
 fastapi>=0.110.0
 uvicorn>=0.29.0
 httpx>=0.27.0

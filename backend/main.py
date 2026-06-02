@@ -4,20 +4,13 @@ Exposes POST /api/demo for the landing page live demo widget.
 """
 
 import os
-import sys
+import re
 import json
 import httpx
 import stripe
-from pathlib import Path
+import anthropic
 from datetime import datetime
 
-# Add repo root to path so we can import mcp_server and storage
-_REPO_ROOT = Path(__file__).parent.parent
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
-
-from mcp_server.classifier import route_prompt
-from mcp_server.optimizer import optimize
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +21,202 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
+
+# ── Inline classifier / optimizer ─────────────────────────────────────────────
+# Railway deploys backend/ as an isolated container — the parent repo's
+# mcp_server/ and storage/ packages are not available on $PYTHONPATH there.
+# These inline implementations mirror mcp_server/classifier.py and
+# mcp_server/optimizer.py exactly so the demo endpoint works in production.
+
+_AMBIGUITY_VERBS = [
+    "handle", "manage", "fix", "make it work", "deal with",
+    "update", "improve", "refactor", "clean up", "sort out",
+]
+_CODE_KEYWORDS = [
+    "function", "class", "api", "endpoint", "component", "middleware",
+    "script", "write", "create", "implement", "build", "add", "set up",
+]
+_FORMAT_KEYWORDS = [
+    "json", "list", "array", "string", "dict", "object",
+    "html", "markdown", "table", "as a ", "return type", "output format",
+]
+_CONVERSATIONAL = {
+    "yes", "no", "ok", "okay", "thanks", "thank", "cool",
+    "great", "sure", "alright", "yep", "nope", "gotcha",
+}
+_OPTIMIZATION_THRESHOLD = 38
+_VAGUE_ACTION_VERBS = frozenset({
+    "make", "fix", "improve", "update", "change", "do", "help", "clean", "sort",
+})
+_MULTI_WORD_VAGUE_PHRASES = frozenset({
+    "make it", "make this", "make that", "make it better", "make this better",
+    "make that better", "make it work", "make this work", "fix it", "fix this",
+    "fix that", "improve it", "improve this", "improve that", "clean up",
+    "sort out", "help me", "do this", "do that",
+})
+_QUESTION_STARTERS = frozenset({
+    "what", "how", "why", "when", "where", "is", "does", "can", "should",
+})
+_GENERIC_OBJECTS = frozenset({
+    "it", "this", "that", "them", "things", "everything", "stuff",
+    "bug", "issue", "error", "problem", "code", "file", "thing",
+})
+_STOP_WORDS = frozenset({
+    "the", "a", "an", "in", "on", "at", "to", "for", "of", "with",
+    "that", "this", "be", "by", "or", "and", "but", "not", "from",
+    "as", "into", "about",
+})
+_CLEAR_ACTION_VERBS = frozenset({
+    "implement", "refactor", "migrate", "deploy", "configure", "integrate",
+    "optimize", "debug", "test", "write", "create", "build", "add", "remove",
+    "delete", "update", "fix",
+})
+
+_OPTIMIZE_SYSTEM = """\
+You are an expert prompt engineer embedded in a developer's IDE. Your job is to take a
+user's raw prompt and rewrite it so it is clearer, more specific, and more likely to
+produce a high-quality response from a coding assistant.
+
+CORE RULE — INTENT PRESERVATION:
+Your rewrite must preserve the user's original intent exactly. You improve HOW the
+prompt is expressed, never WHAT it asks for.
+
+HARD CONSTRAINTS — never violate these:
+1. Do NOT expand the task scope. "fix the bug" must not become "refactor the system".
+2. Do NOT add unrequested features, libraries, or architectural changes.
+3. Do NOT change the task type. A fix stays a fix. A question stays a question.
+4. Do NOT assume target files, components, or frameworks unless present in history.
+5. For bug-fix prompts: default to "smallest safe fix".
+6. For bug-fix prompts: add "do not change unrelated files" unless user said otherwise.
+7. If you must add an assumption to make the prompt executable, label it explicitly
+   in changes_made as "Assumption added: <what you assumed>".
+8. Never make the prompt sound more ambitious than the user intended.
+
+Return a JSON object with exactly these keys:
+  "optimized_prompt" : the rewritten prompt (string)
+  "reason"           : one sentence explaining the main improvement (string)
+  "changes_made"     : list of short strings, each describing one specific change
+
+Respond ONLY with valid JSON. No markdown fences, no extra commentary.\
+"""
+
+
+def _has_technical_noun(words: list) -> bool:
+    return any(
+        len(w) > 4 and w not in _GENERIC_OBJECTS and w not in _STOP_WORDS
+        for w in words
+    )
+
+
+def _classify_prompt(prompt: str) -> int:
+    score = 0
+    lower = prompt.lower().strip()
+    words = lower.split()
+    word_count = len(words)
+
+    has_numbered_steps = bool(re.search(r"(?:^|\s)\d+\.\s", prompt))
+    has_explicit_format = any(kw in lower for kw in _FORMAT_KEYWORDS)
+    has_code_task = any(kw in lower for kw in _CODE_KEYWORDS)
+    has_tech_noun = _has_technical_noun(words)
+
+    if words and words[0] in _CONVERSATIONAL:
+        score -= 25
+    if word_count < 4 and not has_code_task and not has_tech_noun:
+        score -= 20
+    if re.match(r"^what (is|does|are)\b", lower):
+        score -= 15
+    if has_numbered_steps or has_explicit_format:
+        score -= 15
+
+    ambiguity_hits = sum(1 for v in _AMBIGUITY_VERBS if v in lower)
+    score += min(ambiguity_hits * 25, 25)
+    and_count = lower.count(" and ")
+    comma_count = lower.count(",")
+    score += min((and_count + comma_count) * 12, 30)
+    if has_code_task and not has_explicit_format:
+        score += 15
+    if has_tech_noun:
+        score += 25
+    if 2 <= word_count <= 6 and words and words[0] in _CLEAR_ACTION_VERBS and has_tech_noun:
+        score += 15
+
+    return score
+
+
+def _route_prompt(prompt: str) -> dict:
+    score = _classify_prompt(prompt)
+    lower = prompt.lower().strip()
+    words = lower.split()
+    word_count = len(words)
+
+    # Clarify check
+    is_clarify = False
+    missing_context: list = []
+    if lower.strip() in _MULTI_WORD_VAGUE_PHRASES:
+        is_clarify, missing_context = True, ["target area", "desired outcome"]
+    elif word_count < 4 and score >= _OPTIMIZATION_THRESHOLD and not _has_technical_noun(words):
+        is_clarify, missing_context = True, ["target area", "desired outcome"]
+    elif word_count <= 5 and words and words[0] in _VAGUE_ACTION_VERBS:
+        meaningful = [w for w in words[1:] if w not in {"the", "a", "an", "my", "our", "your"}]
+        if not meaningful:
+            is_clarify, missing_context = True, ["target area", "desired outcome"]
+        elif len(meaningful) <= 2 and all(w in _GENERIC_OBJECTS for w in meaningful):
+            has_bug_word = any(w in {"bug", "issue", "error", "problem"} for w in meaningful)
+            missing_context = ["target file or component", "desired outcome"] if has_bug_word \
+                else ["target area", "desired outcome"]
+            is_clarify = True
+
+    if is_clarify:
+        return {
+            "route": "clarify",
+            "quality_score": score,
+            "reason": "Prompt is too vague to optimize safely without risking scope expansion.",
+            "missing_context": missing_context,
+        }
+
+    is_question = bool(words and words[0] in _QUESTION_STARTERS)
+    if score < _OPTIMIZATION_THRESHOLD or (is_question and score < 50):
+        return {
+            "route": "pass",
+            "quality_score": score,
+            "reason": f"Score {score} is below threshold {_OPTIMIZATION_THRESHOLD}; prompt is clear enough.",
+            "missing_context": [],
+        }
+
+    return {
+        "route": "enrich",
+        "quality_score": score,
+        "reason": "Prompt can be enriched with more technical specificity and context.",
+        "missing_context": [],
+    }
+
+
+def _optimize(prompt: str) -> dict:
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"optimized_prompt": prompt, "reason": "API key not configured.", "changes_made": []}
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=512,
+            system=_OPTIMIZE_SYSTEM,
+            messages=[{"role": "user", "content": f"Original prompt:\n{prompt}"}],
+        )
+        raw = response.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```", 2)[1]
+            raw = raw[raw.find("\n") + 1:]
+            raw = raw.rsplit("```", 1)[0].strip()
+        data = json.loads(raw)
+        return {
+            "optimized_prompt": data.get("optimized_prompt", prompt),
+            "reason": data.get("reason", ""),
+            "changes_made": data.get("changes_made", []),
+        }
+    except Exception:
+        return {"optimized_prompt": prompt, "reason": "Optimization unavailable; original prompt returned.", "changes_made": []}
+
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
@@ -218,7 +407,7 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
             status_code=429,
         )
 
-    routing = route_prompt(prompt, [], 1)
+    routing = _route_prompt(prompt)
     route = routing["route"]
     score = routing["quality_score"]
 
@@ -226,7 +415,7 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
     if route in ("pass", "clarify"):
         result = {"optimized_prompt": prompt, "reason": routing["reason"], "changes_made": []}
     else:
-        result = optimize(prompt, [])
+        result = _optimize(prompt)
         was_optimized = result["optimized_prompt"] != prompt
 
     new_count = await _upsert_usage(tracking_key)
