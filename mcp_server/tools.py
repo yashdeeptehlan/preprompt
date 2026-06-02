@@ -76,7 +76,7 @@ def optimize_prompt(
             classifier_score=score,
             was_intercepted=False,
             turn_number=turn_number,
-            session_id=get_or_create_session(),
+            session_id=_SESSION_ID,
             route="clarify",
         )
         update_memory_from_prompt(user_prompt, conversation_history)
@@ -96,7 +96,7 @@ def optimize_prompt(
             classifier_score=score,
             was_intercepted=False,
             turn_number=turn_number,
-            session_id=get_or_create_session(),
+            session_id=_SESSION_ID,
             route="pass",
         )
         update_memory_from_prompt(user_prompt, conversation_history)
@@ -118,7 +118,7 @@ def optimize_prompt(
         classifier_score=score,
         was_intercepted=was_intercepted,
         turn_number=turn_number,
-        session_id=get_or_create_session(),
+        session_id=_SESSION_ID,
         route="enrich",
     )
     update_memory_from_prompt(user_prompt, conversation_history)
