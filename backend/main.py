@@ -1,15 +1,23 @@
 """
 PrePrompt demo backend — deployed to Railway.
-Fully self-contained: no dependencies on parent mcp_server/ or storage/ packages.
 Exposes POST /api/demo for the landing page live demo widget.
 """
 
 import os
+import sys
 import json
-import anthropic
 import httpx
 import stripe
+from pathlib import Path
 from datetime import datetime
+
+# Add repo root to path so we can import mcp_server and storage
+_REPO_ROOT = Path(__file__).parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from mcp_server.classifier import route_prompt
+from mcp_server.optimizer import optimize
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,7 +29,6 @@ from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
@@ -56,84 +63,6 @@ def verify_origin(request: Request):
     if not any(origin.startswith(a) for a in allowed):
         raise HTTPException(status_code=403, detail="Origin not allowed")
     return True
-
-
-# ── Inline classifier ─────────────────────────────────────────────────────────
-
-_QUESTION_WORDS = {"what", "why", "how", "when", "where", "who", "which", "is", "are", "does", "do", "can", "should"}
-_VAGUE_SHORT_VERBS = {"fix", "improve", "update", "change", "make", "add", "refactor", "clean", "optimize"}
-_TECH_KEYWORDS = {
-    "api", "auth", "oauth", "jwt", "middleware", "database", "db", "sql", "redis",
-    "cache", "queue", "async", "await", "function", "class", "module", "service",
-    "endpoint", "route", "test", "docker", "deploy", "migration", "schema",
-    "react", "fastapi", "django", "flask", "express", "node", "typescript",
-    "python", "golang", "rust", "postgres", "mongodb", "supabase", "prisma",
-    "graphql", "rest", "grpc", "websocket", "ci", "cd", "github", "lambda",
-    "rate", "limit", "limiter", "token", "refresh", "session", "cookie",
-    "webhook", "cron", "worker", "pipeline", "stream", "buffer", "hook",
-    "implement", "build", "create", "write", "generate", "refactor",
-}
-
-
-def _route_prompt(prompt: str) -> dict:
-    words = prompt.lower().split()
-    word_count = len(words)
-
-    # PASS: very short or question
-    if word_count <= 2:
-        return {"route": "pass", "score": 5, "reason": "Prompt is too short to optimize."}
-    if words[0] in _QUESTION_WORDS:
-        return {"route": "pass", "score": 10, "reason": "Factual question — no rewrite needed."}
-
-    has_tech = any(w in _TECH_KEYWORDS for w in words)
-
-    # CLARIFY: vague + short + no technical content
-    if word_count < 6 and not has_tech and words[0] in _VAGUE_SHORT_VERBS:
-        return {
-            "route": "clarify",
-            "score": 20,
-            "reason": "Prompt is too vague to optimize without more context.",
-        }
-
-    # ENRICH: everything else
-    score = min(95, 30 + word_count * 3 + (25 if has_tech else 0))
-    return {"route": "enrich", "score": score, "reason": "Prompt can be made more precise and actionable."}
-
-
-# ── Inline optimizer ──────────────────────────────────────────────────────────
-
-_SYSTEM = """You are PrePrompt, an expert prompt engineer. Your job is to rewrite a developer's prompt to be clearer, more specific, and more actionable for an AI coding assistant.
-
-RULES:
-- Preserve the original intent exactly — never change what the user is asking for
-- Add specificity: output format, constraints, edge cases the user probably wants handled
-- Keep it concise — do not pad with unnecessary words
-- Return JSON only, no markdown fences
-
-Output format:
-{"optimized_prompt": "...", "reason": "one sentence on what you improved", "changes_made": ["change 1", "change 2"]}"""
-
-
-def _optimize(prompt: str) -> dict:
-    if not ANTHROPIC_API_KEY:
-        return {"optimized_prompt": prompt, "reason": "No API key configured.", "changes_made": []}
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=1024,
-            system=_SYSTEM,
-            messages=[{"role": "user", "content": f"Rewrite this prompt:\n\n{prompt}"}],
-        )
-        text = msg.content[0].text.strip()
-        # Strip markdown fences if present
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        return json.loads(text)
-    except Exception as e:
-        return {"optimized_prompt": prompt, "reason": f"Optimization unavailable: {e}", "changes_made": []}
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -289,15 +218,15 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
             status_code=429,
         )
 
-    routing = _route_prompt(prompt)
+    routing = route_prompt(prompt, [], 1)
     route = routing["route"]
-    score = routing["score"]
+    score = routing["quality_score"]
 
     was_optimized = False
     if route in ("pass", "clarify"):
         result = {"optimized_prompt": prompt, "reason": routing["reason"], "changes_made": []}
     else:
-        result = _optimize(prompt)
+        result = optimize(prompt, [])
         was_optimized = result["optimized_prompt"] != prompt
 
     new_count = await _upsert_usage(tracking_key)
