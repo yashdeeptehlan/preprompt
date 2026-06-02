@@ -239,3 +239,23 @@ def route_prompt(prompt: str, history: list, turn: int) -> dict:
         "reason": "Prompt can be enriched with more technical specificity and context.",
         "missing_context": [],
     }
+
+
+_CLARIFY_TEMPLATES: dict[str, str] = {
+    "target area": (
+        "What specifically should be improved: UI/UX, performance, "
+        "code quality, accessibility, or architecture?"
+    ),
+    "desired outcome": "What should the end result look like?",
+    "scope boundary": "Should this be a minimal targeted fix or a broader refactor?",
+    "target file or component": (
+        "Which file, component, or function should this apply to?"
+    ),
+}
+
+
+def get_clarifying_question(missing_context: list) -> str:
+    for ctx in missing_context:
+        if ctx in _CLARIFY_TEMPLATES:
+            return _CLARIFY_TEMPLATES[ctx]
+    return "What specifically do you want changed, and what should the result look like?"

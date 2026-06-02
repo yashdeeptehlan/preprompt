@@ -113,7 +113,7 @@ def main() -> None:
         from dotenv import load_dotenv
         load_dotenv(Path.home() / ".preprompt" / ".env")
 
-        from mcp_server.classifier import route_prompt
+        from mcp_server.classifier import route_prompt, get_clarifying_question
         routing = route_prompt(prompt, history, turn)
         route = routing["route"]
         score = routing["quality_score"]
@@ -123,20 +123,7 @@ def main() -> None:
             sys.exit(0)
 
         if route == "clarify":
-            question = routing.get("missing_context", [])
-            _CLARIFY_TEMPLATES = {
-                "target area": "What specifically should be improved: UI/UX, performance, code quality, accessibility, or architecture?",
-                "desired outcome": "What should the end result look like?",
-                "scope boundary": "Should this be a minimal targeted fix or a broader refactor?",
-                "target file or component": "Which file, component, or function should this apply to?",
-            }
-            clarifying_q = None
-            for ctx in question:
-                if ctx in _CLARIFY_TEMPLATES:
-                    clarifying_q = _CLARIFY_TEMPLATES[ctx]
-                    break
-            if not clarifying_q:
-                clarifying_q = "What specifically do you want changed, and what should the result look like?"
+            clarifying_q = get_clarifying_question(routing.get("missing_context", []))
 
             print(_render_clarify_annotation(score, clarifying_q, prompt), file=sys.stderr)
 

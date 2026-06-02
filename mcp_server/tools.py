@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from mcp_server.classifier import classify_prompt, route_prompt, OPTIMIZATION_THRESHOLD
+from mcp_server.classifier import classify_prompt, route_prompt, OPTIMIZATION_THRESHOLD, get_clarifying_question
 from mcp_server.optimizer import optimize
 from mcp_server.extractor import update_memory_from_prompt
 from storage.db import (
@@ -13,25 +13,6 @@ from storage.db import (
 )
 
 mcp = FastMCP("PrePrompt")
-
-_CLARIFY_TEMPLATES = {
-    "target area": (
-        "What specifically should be improved: UI/UX, performance, code quality, "
-        "accessibility, or architecture?"
-    ),
-    "desired outcome": "What should the end result look like?",
-    "scope boundary": "Should this be a minimal targeted fix or a broader refactor?",
-    "target file or component": (
-        "Which file, component, or function should this apply to?"
-    ),
-}
-
-
-def _clarifying_question(missing_context: list) -> str:
-    for ctx in missing_context:
-        if ctx in _CLARIFY_TEMPLATES:
-            return _CLARIFY_TEMPLATES[ctx]
-    return "What specifically do you want changed, and what should the result look like?"
 
 # Stable session identity: one session per hostname per calendar day.
 # Kept as a module-level alias so existing tests can import _SESSION_ID.
@@ -69,7 +50,7 @@ def optimize_prompt(
     score = routing["quality_score"]
 
     if route == "clarify":
-        question = _clarifying_question(routing.get("missing_context", []))
+        question = get_clarifying_question(routing.get("missing_context", []))
         save_prompt_event(
             original_prompt=user_prompt,
             optimized_prompt=user_prompt,
