@@ -21,6 +21,41 @@ import concurrent.futures
 from pathlib import Path
 
 
+# ── Timeout-guarded optimizer call ────────────────────────────────────────────
+
+def _optimize_with_timeout(optimize_fn, prompt: str, history: list, timeout: float = 2.0) -> dict:
+    """Call optimize_fn(prompt, history) with a hard timeout. Returns passthrough on timeout/error.
+
+    Uses shutdown(wait=False) so a timed-out thread is abandoned immediately rather than
+    blocking until it finishes (the default behaviour of the 'with' context manager).
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(optimize_fn, prompt, history)
+    try:
+        result = future.result(timeout=timeout)
+        executor.shutdown(wait=False)
+        return result
+    except concurrent.futures.TimeoutError:
+        executor.shutdown(wait=False)
+        print(f"[PrePrompt] Optimization timed out after {timeout}s — passing through",
+              file=sys.stderr)
+        return {
+            "optimized_prompt": prompt,
+            "reason": "Optimization timed out — original prompt used.",
+            "changes_made": [],
+            "timed_out": True,
+        }
+    except Exception as e:
+        executor.shutdown(wait=False)
+        print(f"[PrePrompt] Optimization failed: {e} — passing through", file=sys.stderr)
+        return {
+            "optimized_prompt": prompt,
+            "reason": "Optimization unavailable — original prompt used.",
+            "changes_made": [],
+            "error": True,
+        }
+
+
 # ── Box annotation constants ──────────────────────────────────────────────────
 _WIDTH  = 62
 _INNER  = _WIDTH - 4
@@ -166,31 +201,7 @@ def main() -> None:
 
         from mcp_server.optimizer import optimize
 
-        def _optimize_with_timeout(p: str, h: list, timeout: float = 2.0) -> dict:
-            """Call optimize() with a hard timeout. Returns passthrough dict on timeout or error."""
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(optimize, p, h)
-                try:
-                    return future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    print(f"[PrePrompt] Optimization timed out after {timeout}s — passing through",
-                          file=sys.stderr)
-                    return {
-                        "optimized_prompt": p,
-                        "reason": "Optimization timed out — original prompt used.",
-                        "changes_made": [],
-                        "timed_out": True,
-                    }
-                except Exception as e:
-                    print(f"[PrePrompt] Optimization failed: {e} — passing through", file=sys.stderr)
-                    return {
-                        "optimized_prompt": p,
-                        "reason": "Optimization unavailable — original prompt used.",
-                        "changes_made": [],
-                        "error": True,
-                    }
-
-        result = _optimize_with_timeout(prompt, history, timeout=2.0)
+        result = _optimize_with_timeout(optimize, prompt, history, timeout=2.0)
         optimized: str = result["optimized_prompt"]
         reason: str = result["reason"]
         was_intercepted: bool = optimized != prompt

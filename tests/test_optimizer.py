@@ -1,6 +1,7 @@
 """Tests for the prompt optimizer."""
 
 import json
+import time
 from unittest.mock import MagicMock, patch
 
 
@@ -77,3 +78,53 @@ def test_optimize_graceful_fallback_on_bad_json(mock_anthropic_cls):
     original = "do something"
     result = optimize(original, [])
     assert result["optimized_prompt"] == original
+
+
+# ── _optimize_with_timeout tests ──────────────────────────────────────────────
+
+def test_optimize_with_timeout_times_out():
+    from cli.hook import _optimize_with_timeout
+
+    def slow_optimize(p, h):
+        time.sleep(3)
+        return {"optimized_prompt": "never returned", "reason": "", "changes_made": []}
+
+    start = time.time()
+    result = _optimize_with_timeout(slow_optimize, "my prompt", [], timeout=2.0)
+    elapsed = time.time() - start
+
+    assert elapsed < 2.5
+    assert result["optimized_prompt"] == "my prompt"
+    assert result.get("timed_out") is True
+
+
+def test_optimize_with_timeout_on_exception():
+    from cli.hook import _optimize_with_timeout
+
+    def failing_optimize(p, h):
+        raise ValueError("API unavailable")
+
+    result = _optimize_with_timeout(failing_optimize, "my prompt", [], timeout=2.0)
+
+    assert result["optimized_prompt"] == "my prompt"
+    assert result.get("error") is True
+    assert "timed_out" not in result
+
+
+def test_optimize_with_timeout_returns_result_on_success():
+    from cli.hook import _optimize_with_timeout
+
+    def good_optimize(p, h):
+        return {
+            "optimized_prompt": "improved prompt",
+            "reason": "added specificity",
+            "changes_made": ["added output format"],
+        }
+
+    result = _optimize_with_timeout(good_optimize, "my prompt", [], timeout=2.0)
+
+    assert result["optimized_prompt"] == "improved prompt"
+    assert result["reason"] == "added specificity"
+    assert result["changes_made"] == ["added output format"]
+    assert "timed_out" not in result
+    assert "error" not in result
