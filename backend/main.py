@@ -196,7 +196,7 @@ def _optimize(prompt: str) -> dict:
     if not api_key:
         return {"optimized_prompt": prompt, "reason": "API key not configured.", "changes_made": []}
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=httpx.Timeout(5.0, connect=2.0))
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=512,

@@ -1,6 +1,7 @@
 """Prompt optimizer — rewrites a prompt using Haiku with conversation context."""
 
 import json
+import httpx
 import anthropic
 from mcp_server.config import settings
 from storage.db import get_stack_memory
@@ -57,7 +58,10 @@ def optimize(prompt: str, history: list) -> dict:
     Always returns a dict with keys: optimized_prompt, reason, changes_made.
     Falls back to the original prompt on any error.
     """
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = anthropic.Anthropic(
+        api_key=settings.anthropic_api_key,
+        timeout=httpx.Timeout(8.0, connect=3.0),
+    )
 
     # ── Inject learned stack memory into the system prompt ────────────────────
     try:

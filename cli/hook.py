@@ -17,6 +17,7 @@ import os
 import json
 import uuid
 import time
+import concurrent.futures
 from pathlib import Path
 
 
@@ -165,7 +166,31 @@ def main() -> None:
 
         from mcp_server.optimizer import optimize
 
-        result = optimize(prompt, history)
+        def _optimize_with_timeout(p: str, h: list, timeout: float = 2.0) -> dict:
+            """Call optimize() with a hard timeout. Returns passthrough dict on timeout or error."""
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(optimize, p, h)
+                try:
+                    return future.result(timeout=timeout)
+                except concurrent.futures.TimeoutError:
+                    print(f"[PrePrompt] Optimization timed out after {timeout}s — passing through",
+                          file=sys.stderr)
+                    return {
+                        "optimized_prompt": p,
+                        "reason": "Optimization timed out — original prompt used.",
+                        "changes_made": [],
+                        "timed_out": True,
+                    }
+                except Exception as e:
+                    print(f"[PrePrompt] Optimization failed: {e} — passing through", file=sys.stderr)
+                    return {
+                        "optimized_prompt": p,
+                        "reason": "Optimization unavailable — original prompt used.",
+                        "changes_made": [],
+                        "error": True,
+                    }
+
+        result = _optimize_with_timeout(prompt, history, timeout=2.0)
         optimized: str = result["optimized_prompt"]
         reason: str = result["reason"]
         was_intercepted: bool = optimized != prompt
