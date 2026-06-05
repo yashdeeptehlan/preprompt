@@ -199,6 +199,18 @@ def main() -> None:
             passthrough()
             sys.exit(0)
 
+        from mcp_server.secret_scanner import scan_for_secrets
+        detected_secrets = scan_for_secrets(prompt)
+        if detected_secrets:
+            print(
+                f"[PrePrompt SECURITY] Detected possible secrets in prompt: "
+                f"{', '.join(detected_secrets)}. "
+                f"Prompt will not be sent to optimization model.",
+                file=sys.stderr,
+            )
+            print(json.dumps({"prompt": prompt}))
+            sys.exit(0)
+
         from mcp_server.optimizer import optimize
 
         result = _optimize_with_timeout(optimize, prompt, history, timeout=2.0)

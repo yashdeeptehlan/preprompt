@@ -95,6 +95,26 @@ def optimize_prompt(
         }
 
     # route == "enrich"
+    from mcp_server.secret_scanner import scan_for_secrets
+    secrets = scan_for_secrets(user_prompt)
+    if secrets:
+        save_prompt_event(
+            original_prompt="[SECRET DETECTED - NOT LOGGED]",
+            optimized_prompt="[SECRET DETECTED - NOT LOGGED]",
+            classifier_score=score,
+            was_intercepted=False,
+            turn_number=turn_number,
+            session_id=_SESSION_ID,
+            route="pass",
+        )
+        return {
+            "optimized_prompt": user_prompt,
+            "was_intercepted": False,
+            "score": score,
+            "route": "pass",
+            "reason": f"Possible secrets detected ({', '.join(secrets)}). Prompt passed through without optimization.",
+        }
+
     result = optimize(user_prompt, conversation_history)
     optimized = result["optimized_prompt"]
     was_intercepted = optimized != user_prompt

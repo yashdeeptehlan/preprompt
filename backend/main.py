@@ -191,6 +191,26 @@ def _route_prompt(prompt: str) -> dict:
     }
 
 
+_SECRET_PATTERNS = [
+    ("aws_access_key",     re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("aws_secret_key",     re.compile(r"[0-9a-zA-Z/+]{40}")),
+    ("anthropic_api_key",  re.compile(r"sk-ant-[a-zA-Z0-9\-_]{20,}", re.IGNORECASE)),
+    ("openai_api_key",     re.compile(r"sk-[a-zA-Z0-9]{48}", re.IGNORECASE)),
+    ("github_token",       re.compile(r"gh[pousr]_[A-Za-z0-9_]{36,}")),
+    ("stripe_key",         re.compile(r"[rs]k_(live|test)_[0-9a-zA-Z]{24,}", re.IGNORECASE)),
+    ("private_key_header", re.compile(r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    ("bearer_token",       re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*")),
+    ("generic_api_key",    re.compile(r"['\"]?api[_-]?key['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9\-_]{20,}", re.IGNORECASE)),
+    ("password_pattern",   re.compile(r"['\"]?password['\"]?\s*[:=]\s*['\"]?[^\s'\"]{8,}", re.IGNORECASE)),
+    ("connection_string",  re.compile(r"(postgres|mysql|mongodb|redis)://[^\s]+:[^\s]+@", re.IGNORECASE)),
+]
+
+
+def _scan_for_secrets(text: str) -> list[str]:
+    # Railway can't import mcp_server — patterns mirrored from mcp_server/secret_scanner.py
+    return [name for name, pattern in _SECRET_PATTERNS if pattern.search(text)]
+
+
 def _optimize(prompt: str) -> dict:
     api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -415,6 +435,19 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
     if route in ("pass", "clarify"):
         result = {"optimized_prompt": prompt, "reason": routing["reason"], "changes_made": []}
     else:
+        secrets = _scan_for_secrets(prompt)
+        if secrets:
+            return JSONResponse({
+                "original": prompt,
+                "optimized": prompt,
+                "route": "pass",
+                "score": score,
+                "reason": "Possible secrets detected. Prompt not sent to optimization model.",
+                "changes_made": [],
+                "was_optimized": False,
+                "tries_remaining": max(0, DEMO_LIMIT - current_count),
+                "security_warning": True,
+            })
         result = _optimize(prompt)
         was_optimized = result["optimized_prompt"] != prompt
 
