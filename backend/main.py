@@ -272,7 +272,7 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_SOLO_PRICE_ID = os.environ.get("STRIPE_SOLO_PRICE_ID", "")
 STRIPE_PRO_PRICE_ID = os.environ.get("STRIPE_PRO_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-DEMO_LIMIT = 2
+DEMO_LIMIT = int(os.environ.get("DEMO_LIMIT", "2"))
 
 stripe.api_key = STRIPE_SECRET_KEY
 
@@ -341,23 +341,38 @@ async def _get_usage_count(key: str) -> int:
     return 0
 
 
-async def _upsert_usage(key: str) -> int:
-    """Increment usage count for the given key and return the new count."""
+async def _upsert_usage(key: str, current_count: int) -> int:
+    """Increment usage count and return the new count.
+
+    Uses POST for first use (current_count == 0) and PATCH for subsequent uses,
+    with Prefer: return=representation so the updated row comes back without a
+    second round-trip. Race condition window is narrow (DEMO_LIMIT=2 makes any
+    over-count low-risk); a stored-proc RPC would close it fully.
+    """
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
-        return 1
-    url = f"{SUPABASE_URL}/rest/v1/demo_usage"
-    headers = {**_sb_headers(), "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}
-    payload = {"ip": key, "count": 1, "last_used_at": "now()"}
-    async with httpx.AsyncClient() as client:
-        await client.post(url, json=payload, headers=headers, timeout=5)
-        r2 = await client.get(
-            f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}&select=count",
-            headers=_sb_headers(), timeout=5,
-        )
-        rows = r2.json()
-        if rows and isinstance(rows, list):
-            return rows[0].get("count", 1)
-    return 1
+        return current_count + 1
+
+    new_count = current_count + 1
+    rpr_headers = {**_sb_headers(), "Content-Type": "application/json", "Prefer": "return=representation"}
+
+    async with httpx.AsyncClient(timeout=5) as client:
+        if current_count == 0:
+            r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/demo_usage",
+                json={"ip": key, "count": 1, "last_used_at": "now()"},
+                headers=rpr_headers,
+            )
+        else:
+            r = await client.patch(
+                f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}",
+                json={"count": new_count, "last_used_at": "now()"},
+                headers=rpr_headers,
+            )
+
+        rows = r.json()
+        if rows and isinstance(rows, list) and rows:
+            return rows[0].get("count", new_count)
+    return new_count
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
@@ -435,7 +450,8 @@ def _get_client_ip(request: Request) -> str:
 
 
 @app.post("/api/demo")
-@limiter.limit("10/minute")
+@limiter.limit("5/minute")
+@limiter.limit("20/day")
 async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -> JSONResponse:
     _t0 = time.monotonic()
     prompt = body.prompt.strip()
@@ -449,10 +465,21 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
         user_id = await _verify_jwt(auth_header[7:])
     tracking_key = f"user:{user_id}" if user_id else _get_client_ip(request)
 
+    # Step 1: enforce limit server-side BEFORE any processing
     current_count = await _get_usage_count(tracking_key)
     if current_count >= DEMO_LIMIT:
+        from analytics import track
+        track("free_tier_limit_reached", user_id, {
+            "ip_hash": hash(_get_client_ip(request)) % 1_000_000,
+            "tries_used": current_count,
+        })
         return JSONResponse(
-            {"error": "limit_reached", "message": "You've used your 2 free tries. Get 500/month for $8 →"},
+            {
+                "error": "limit_reached",
+                "message": f"You've used your {DEMO_LIMIT} free tries. Get 500/month for $8 →",
+                "tries_used": current_count,
+                "limit": DEMO_LIMIT,
+            },
             status_code=429,
         )
 
@@ -480,7 +507,8 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
         result = _optimize(prompt)
         was_optimized = result["optimized_prompt"] != prompt
 
-    new_count = await _upsert_usage(tracking_key)
+    # Step 2: increment ONLY after successful processing
+    new_count = await _upsert_usage(tracking_key, current_count)
     tries_remaining = max(0, DEMO_LIMIT - new_count)
 
     from analytics import track
