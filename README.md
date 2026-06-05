@@ -1,7 +1,7 @@
 # PrePrompt
 
 [![PyPI](https://img.shields.io/pypi/v/preprompt)](https://pypi.org/project/preprompt/)
-[![CI](https://github.com/yashdeeptehlan/preprompt/actions/workflows/ci.yml/badge.svg)](https://github.com/yashdeeptehlan/preprompt/actions)
+[![CI](https://github.com/Preprompt-ai/preprompt/actions/workflows/ci.yml/badge.svg)](https://github.com/Preprompt-ai/preprompt/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
 > Your prompts, battle-tested. An MCP server that intercepts and optimizes
@@ -63,7 +63,7 @@ python scripts/setup_global_hook.py
 **From source:**
 
 ```bash
-git clone https://github.com/yashdeeptehlan/preprompt
+git clone https://github.com/Preprompt-ai/preprompt
 cd preprompt && ./scripts/install.sh
 ```
 

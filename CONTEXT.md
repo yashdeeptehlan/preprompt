@@ -145,8 +145,8 @@ tests/
 ## PyPI publish instructions
 1. Create account at https://pypi.org
 2. Go to https://pypi.org/manage/account/publishing/
-3. Add trusted publisher: owner=yashdeeptehlan, repo=preprompt, workflow=publish.yml, env=release
-4. Create GitHub environment "release" at https://github.com/yashdeeptehlan/preprompt/settings/environments
+3. Add trusted publisher: owner=Preprompt-ai, repo=preprompt, workflow=publish.yml, env=release
+4. Create GitHub environment "release" at https://github.com/Preprompt-ai/preprompt/settings/environments
 5. Tag a release: git tag v0.1.X && git push origin v0.1.X
 
 ## Next phases
@@ -197,14 +197,14 @@ Confirm phase + what comes next, then proceed.
 - Dev machine: macOS
 - API key: in .env as ANTHROPIC_API_KEY
 - Claude Code workspace: /Users/user/Documents/Promptforge/promptforge
-- GitHub: https://github.com/yashdeeptehlan/preprompt
+- GitHub: https://github.com/Preprompt-ai/preprompt
 
 ## Current version
 v0.1.9 — live on PyPI at https://pypi.org/project/preprompt/
 
 ## Distribution
 - PyPI: pip install preprompt
-- GitHub: github.com/yashdeeptehlan/preprompt (public, MIT, 10 stars)
+- GitHub: github.com/Preprompt-ai/preprompt (public, MIT)
 - Landing page: preprompt.org
 - Email list: preprompt.beehiiv.com/subscribe
 

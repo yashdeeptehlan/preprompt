@@ -27,9 +27,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yashdeeptehlan/preprompt"
-Repository = "https://github.com/yashdeeptehlan/preprompt"
-Issues = "https://github.com/yashdeeptehlan/preprompt/issues"
+Homepage = "https://github.com/Preprompt-ai/preprompt"
+Repository = "https://github.com/Preprompt-ai/preprompt"
+Issues = "https://github.com/Preprompt-ai/preprompt/issues"
 
 [project.optional-dependencies]
 dev = [
