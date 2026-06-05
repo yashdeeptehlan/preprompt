@@ -6,9 +6,13 @@ Exposes POST /api/demo for the landing page live demo widget.
 import os
 import re
 import json
+import time
 import httpx
 import stripe
 import anthropic
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.httpx import HttpxIntegration
 from datetime import datetime
 
 from dotenv import load_dotenv
@@ -21,6 +25,30 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
+
+# ── Sentry ────────────────────────────────────────────────────────────────────
+
+def _scrub_sensitive(event: dict) -> dict:
+    """Remove prompt text from Sentry events to protect user privacy."""
+    try:
+        if "request" in event and "data" in event["request"]:
+            if "prompt" in event["request"]["data"]:
+                event["request"]["data"]["prompt"] = "[REDACTED]"
+    except Exception:
+        pass
+    return event
+
+
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if _SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=_SENTRY_DSN,
+        integrations=[FastApiIntegration(), HttpxIntegration()],
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.1,
+        environment=os.environ.get("RAILWAY_ENVIRONMENT", "production"),
+        before_send=lambda event, hint: _scrub_sensitive(event),
+    )
 
 # ── Inline classifier / optimizer ─────────────────────────────────────────────
 # Railway deploys backend/ as an isolated container — the parent repo's
@@ -409,6 +437,7 @@ def _get_client_ip(request: Request) -> str:
 @app.post("/api/demo")
 @limiter.limit("10/minute")
 async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -> JSONResponse:
+    _t0 = time.monotonic()
     prompt = body.prompt.strip()
     if not prompt:
         return JSONResponse({"error": "empty_prompt", "message": "Prompt cannot be empty."}, status_code=400)
@@ -454,6 +483,19 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
     new_count = await _upsert_usage(tracking_key)
     tries_remaining = max(0, DEMO_LIMIT - new_count)
 
+    from analytics import track
+    track("prompt_processed", user_id, {
+        "route": route,
+        "score": score,
+        "was_optimized": was_optimized,
+        "has_auth": user_id is not None,
+        "secret_detected": False,
+        "timed_out": False,
+        "latency_ms": round((time.monotonic() - _t0) * 1000),
+        "model": "haiku" if was_optimized else None,
+        "tries_remaining": tries_remaining,
+    })
+
     return JSONResponse({
         "original": prompt,
         "optimized": result["optimized_prompt"],
@@ -488,6 +530,11 @@ async def create_checkout_session(body: CheckoutRequest, _o=Depends(verify_origi
             metadata={"user_id": body.user_id, "plan": body.plan},
             subscription_data={"metadata": {"user_id": body.user_id, "plan": body.plan}},
         )
+        from analytics import track
+        track("checkout_initiated", body.user_id, {
+            "plan": body.plan,
+            "user_id": body.user_id,
+        })
         return JSONResponse({"checkout_url": session.url})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -537,6 +584,14 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                         },
                         timeout=10,
                     )
+
+            if user_id:
+                from analytics import track, identify
+                identify(user_id, {"plan": plan, "email": customer_email or ""})
+                track("subscription_activated", user_id, {
+                    "plan": plan,
+                    "user_id": user_id,
+                })
 
             if customer_email:
                 try:
