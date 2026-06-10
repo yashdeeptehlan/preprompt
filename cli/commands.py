@@ -11,6 +11,7 @@ preprompt-optimize           Optimize a prompt from the command line
 """
 
 import argparse
+import shutil
 import sys
 import sqlite3
 from datetime import datetime, timezone
@@ -62,19 +63,37 @@ def _parse_version(v: str) -> tuple:
         return (0,)
 
 
-def _check_for_updates() -> None:
-    """Silently check PyPI for newer version. Print notice if behind."""
+def _fetch_latest_version() -> str | None:
+    """Return the latest PrePrompt version on PyPI, or None on any failure."""
     try:
-        import urllib.request, json
+        import httpx
+        r = httpx.get(
+            "https://pypi.org/pypi/preprompt/json",
+            headers={"User-Agent": "preprompt-cli"},
+            timeout=2.0,
+        )
+        if r.status_code == 200:
+            return r.json()["info"]["version"]
+    except Exception:
+        pass
+    return None
+
+
+def _check_for_updates() -> None:
+    """Print a one-line notice when PyPI has a newer release.
+
+    Audit M-3: we deliberately do NOT auto-suggest the upgrade command —
+    `preprompt-update` is now opt-in via an explicit --yes flag, since a
+    compromised PyPI account would otherwise turn every developer into a
+    one-step supply-chain casualty.
+    """
+    try:
         from importlib.metadata import version as pkg_version
         current = pkg_version("preprompt")
-        url = "https://pypi.org/pypi/preprompt/json"
-        req = urllib.request.Request(url, headers={"User-Agent": "preprompt-cli"})
-        with urllib.request.urlopen(req, timeout=2) as r:
-            latest = json.loads(r.read())["info"]["version"]
-        if _parse_version(latest) > _parse_version(current):
+        latest = _fetch_latest_version()
+        if latest and _parse_version(latest) > _parse_version(current):
             print(f"  ⚡ PrePrompt {latest} available (you have {current})")
-            print(f"     Run: preprompt-update")
+            print(f"     To upgrade after reviewing the changelog: preprompt-update --yes")
             print()
     except Exception:
         pass  # never block CLI on network failure
@@ -258,11 +277,29 @@ def memory_cmd() -> None:
 
 # ── preprompt-clip ───────────────────────────────────────────────────────────
 
+def _resolve_clipboard_tool(*candidates: str) -> str | None:
+    """Resolve a clipboard helper to its absolute path or return None.
+
+    Audit M-4: invoking these by bare name lets a hostile PATH shadow them
+    with a binary the user didn't intend to run. ``shutil.which`` reads the
+    real PATH but the returned path is absolute, so subprocess can't be
+    redirected by a later PATH change.
+    """
+    for name in candidates:
+        path = shutil.which(name)
+        if path:
+            return path
+    return None
+
+
 def _clipboard_read() -> str:
     """Read clipboard cross-platform."""
     import subprocess
     if sys.platform == "darwin":
-        return subprocess.run(["pbpaste"], capture_output=True, text=True).stdout
+        tool = _resolve_clipboard_tool("pbpaste")
+        if not tool:
+            return ""
+        return subprocess.run([tool], capture_output=True, text=True).stdout
     elif sys.platform == "win32":
         import tkinter as tk
         root = tk.Tk()
@@ -271,27 +308,31 @@ def _clipboard_read() -> str:
         root.destroy()
         return text
     else:  # Linux
-        try:
+        xclip = _resolve_clipboard_tool("xclip")
+        if xclip:
             return subprocess.run(
-                ["xclip", "-selection", "clipboard", "-o"],
+                [xclip, "-selection", "clipboard", "-o"],
                 capture_output=True, text=True,
             ).stdout
-        except FileNotFoundError:
-            try:
-                return subprocess.run(
-                    ["xsel", "--clipboard", "--output"],
-                    capture_output=True, text=True,
-                ).stdout
-            except FileNotFoundError:
-                print("Install xclip or xsel for clipboard support on Linux")
-                return ""
+        xsel = _resolve_clipboard_tool("xsel")
+        if xsel:
+            return subprocess.run(
+                [xsel, "--clipboard", "--output"],
+                capture_output=True, text=True,
+            ).stdout
+        print("Install xclip or xsel for clipboard support on Linux")
+        return ""
 
 
 def _clipboard_write(text: str) -> None:
     """Write clipboard cross-platform."""
     import subprocess
     if sys.platform == "darwin":
-        subprocess.run(["pbcopy"], input=text, text=True)
+        tool = _resolve_clipboard_tool("pbcopy")
+        if not tool:
+            print(f"Optimized prompt:\n{text}")
+            return
+        subprocess.run([tool], input=text, text=True)
     elif sys.platform == "win32":
         import tkinter as tk
         root = tk.Tk()
@@ -301,13 +342,15 @@ def _clipboard_write(text: str) -> None:
         root.update()
         root.destroy()
     else:  # Linux
-        try:
-            subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True)
-        except FileNotFoundError:
-            try:
-                subprocess.run(["xsel", "--clipboard", "--input"], input=text, text=True)
-            except FileNotFoundError:
-                print(f"Optimized prompt:\n{text}")
+        xclip = _resolve_clipboard_tool("xclip")
+        if xclip:
+            subprocess.run([xclip, "-selection", "clipboard"], input=text, text=True)
+            return
+        xsel = _resolve_clipboard_tool("xsel")
+        if xsel:
+            subprocess.run([xsel, "--clipboard", "--input"], input=text, text=True)
+            return
+        print(f"Optimized prompt:\n{text}")
 
 
 def clip_cmd() -> None:
@@ -500,8 +543,18 @@ def install_cmd() -> None:
         else:
             env_file.parent.mkdir(parents=True, exist_ok=True)
             env_file.write_text(f"ANTHROPIC_API_KEY={api_key}\n")
+            try:
+                import os as _os
+                _os.chmod(env_file, 0o600)  # audit L-9 — restrict env to owner
+            except (OSError, NotImplementedError):
+                pass
             if not local_env.exists():
                 local_env.write_text(f"ANTHROPIC_API_KEY={api_key}\n")
+                try:
+                    import os as _os
+                    _os.chmod(local_env, 0o600)
+                except (OSError, NotImplementedError):
+                    pass
             print("  ✓ API key saved")
     else:
         print("  Step 1/3 — API key already configured ✓")
@@ -561,29 +614,43 @@ def install_cmd() -> None:
 # ── preprompt-update ─────────────────────────────────────────────────────────
 
 def update_cmd() -> None:
-    """Upgrade PrePrompt to latest version and re-register hooks."""
+    """Upgrade PrePrompt to latest version and re-register hooks.
+
+    Audit M-3: requires explicit ``--yes`` so a compromised PyPI account or
+    typo-squat can't auto-install on every user via a one-liner. Until PrePrompt
+    publishes Sigstore signatures, the user reviews the changelog first.
+    """
     maybe_run_setup()
     import subprocess
     from importlib.metadata import version as pkg_version
+
+    parser = argparse.ArgumentParser(
+        prog="preprompt-update",
+        description="Upgrade PrePrompt to the latest PyPI release.",
+    )
+    parser.add_argument(
+        "--yes", action="store_true",
+        help="Confirm the upgrade. Without this flag the command only checks for updates.",
+    )
+    args = parser.parse_args()
 
     current = pkg_version("preprompt")
     print(f"  Current version: {current}")
     print(f"  Checking PyPI...")
 
-    try:
-        import urllib.request, json
-        req = urllib.request.Request(
-            "https://pypi.org/pypi/preprompt/json",
-            headers={"User-Agent": "preprompt-cli"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            latest = json.loads(r.read())["info"]["version"]
-    except Exception as e:
-        print(f"  Could not reach PyPI: {e}")
+    latest = _fetch_latest_version()
+    if latest is None:
+        print(f"  Could not reach PyPI — try again later.")
         return
 
     if latest == current:
         print(f"  Already on latest ({current})")
+        return
+
+    if not args.yes:
+        print(f"  PrePrompt {latest} is available (you have {current}).")
+        print(f"  Review the changelog at https://pypi.org/project/preprompt/{latest}/")
+        print(f"  When ready, run: preprompt-update --yes")
         return
 
     print(f"  Upgrading {current} → {latest}...")
@@ -630,9 +697,11 @@ def update_context_cmd() -> None:
     import datetime
     import re
 
-    # Run pytest to get current test count
+    # Run pytest to get current test count. Use sys.executable rather than the
+    # bare "python" name so we don't end up running a Python 2 interpreter that
+    # happens to be earlier on PATH (audit M-5).
     result = subprocess.run(
-        ["python", "-m", "pytest", "--tb=no", "-q"],
+        [sys.executable, "-m", "pytest", "--tb=no", "-q"],
         capture_output=True, text=True,
         cwd=str(Path(__file__).parent.parent),
     )

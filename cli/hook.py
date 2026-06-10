@@ -17,28 +17,75 @@ import os
 import json
 import uuid
 import time
+import inspect
 import concurrent.futures
+import threading
 from pathlib import Path
 
 
-# ── Timeout-guarded optimizer call ────────────────────────────────────────────
+# Bounded executor — at most one optimize call runs at a time. On timeout we
+# replace the executor so a stuck worker does not pile up on subsequent calls
+# (audit M-10). The previous design created a fresh ThreadPoolExecutor on each
+# call and called shutdown(wait=False) on timeout, leaving the worker thread
+# alive until Anthropic eventually replied — a slow leak in long-lived MCP
+# sessions. We pair the bounded executor with httpx's native socket timeout
+# inside optimize() so the worker exits promptly on real network calls.
+
+_executor_lock = threading.Lock()
+_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_executor() -> concurrent.futures.ThreadPoolExecutor:
+    global _executor
+    with _executor_lock:
+        if _executor is None:
+            _executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix="preprompt-optimize",
+            )
+        return _executor
+
+
+def _reset_executor() -> None:
+    """Drop the current executor so the timed-out worker can't pin the slot."""
+    global _executor
+    with _executor_lock:
+        stale = _executor
+        _executor = None
+    if stale is not None:
+        stale.shutdown(wait=False)
+
 
 def _optimize_with_timeout(optimize_fn, prompt: str, history: list, timeout: float = 2.0) -> dict:
-    """Call optimize_fn(prompt, history) with a hard timeout. Returns passthrough on timeout/error.
+    """Call optimize_fn(prompt, history[, timeout]) with a hard wall-clock cap.
 
-    Uses shutdown(wait=False) so a timed-out thread is abandoned immediately rather than
-    blocking until it finishes (the default behaviour of the 'with' context manager).
+    The cap is enforced via a bounded ThreadPoolExecutor (max_workers=1). If
+    the call exceeds the budget we recycle the executor so the stuck worker is
+    abandoned without piling up future workers. ``timeout`` is also forwarded
+    to optimize_fn when the function accepts it so httpx can cancel the
+    underlying socket on its own clock.
     """
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(optimize_fn, prompt, history)
+    accepts_timeout = False
     try:
-        result = future.result(timeout=timeout)
-        executor.shutdown(wait=False)
-        return result
+        accepts_timeout = "timeout" in inspect.signature(optimize_fn).parameters
+    except (TypeError, ValueError):
+        pass
+
+    def _runner() -> dict:
+        if accepts_timeout:
+            return optimize_fn(prompt, history, timeout=timeout)
+        return optimize_fn(prompt, history)
+
+    executor = _get_executor()
+    future = executor.submit(_runner)
+    try:
+        return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
-        executor.shutdown(wait=False)
-        print(f"[PrePrompt] Optimization timed out after {timeout}s — passing through",
-              file=sys.stderr)
+        _reset_executor()
+        print(
+            f"[PrePrompt] Optimization timed out after {timeout}s — passing through",
+            file=sys.stderr,
+        )
         return {
             "optimized_prompt": prompt,
             "reason": "Optimization timed out — original prompt used.",
@@ -46,7 +93,6 @@ def _optimize_with_timeout(optimize_fn, prompt: str, history: list, timeout: flo
             "timed_out": True,
         }
     except Exception as e:
-        executor.shutdown(wait=False)
         print(f"[PrePrompt] Optimization failed: {e} — passing through", file=sys.stderr)
         return {
             "optimized_prompt": prompt,
@@ -96,10 +142,19 @@ def _render_clarify_annotation(score: int, question: str, original: str) -> str:
     return "\n".join([header] + [info_line] + [sep] + q_lines + [sep, orig_line] + [footer])
 
 
+def _chmod_user_only(path: Path) -> None:
+    """Best-effort chmod 0o600 — silently no-op on Windows where it has no meaning."""
+    try:
+        os.chmod(path, 0o600)
+    except (OSError, NotImplementedError):
+        pass
+
+
 def _log_activity(score: int, was_intercepted: bool, original: str, optimized: str, reason: str) -> None:
     import datetime
     log_path = Path.home() / ".preprompt" / "activity.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not log_path.exists()
     ts = datetime.datetime.now().strftime("%H:%M:%S")
     if was_intercepted:
         line = (
@@ -110,6 +165,10 @@ def _log_activity(score: int, was_intercepted: bool, original: str, optimized: s
         line = f"[{ts}] score={score} passthrough | {original[:60]}\n"
     with open(log_path, "a") as f:
         f.write(line)
+    if is_new:
+        # Audit L-13: activity.log contains user prompts. On shared dev boxes
+        # we don't want other UNIX users reading it. New file → restrict.
+        _chmod_user_only(log_path)
 
 
 def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: bool, turn_number: int, route: str = "enrich") -> None:
@@ -126,6 +185,7 @@ def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: boo
     sidecar_dir.mkdir(parents=True, exist_ok=True)
     sidecar_path = sidecar_dir / f"{uuid.uuid4()}.json"
     sidecar_path.write_text(json.dumps(sidecar))
+    _chmod_user_only(sidecar_path)
 
 
 def main() -> None:
@@ -179,13 +239,14 @@ def main() -> None:
 
             try:
                 _write_sidecar(prompt, prompt, score, False, turn, route="clarify")
-            except Exception:
-                pass
+            except Exception as sidecar_err:
+                print(f"[PrePrompt] Sidecar write failed (clarify): {sidecar_err}",
+                      file=sys.stderr)
 
             try:
                 _log_activity(score, False, prompt, prompt, f"[CLARIFY] {clarifying_q}")
-            except Exception:
-                pass
+            except Exception as log_err:
+                print(f"[PrePrompt] Activity log write failed: {log_err}", file=sys.stderr)
 
             print(json.dumps({"prompt": clarified_prompt}))
             sys.exit(0)
@@ -230,8 +291,8 @@ def main() -> None:
 
         try:
             _log_activity(score, was_intercepted, prompt, optimized, reason)
-        except Exception:
-            pass
+        except Exception as log_err:
+            print(f"[PrePrompt] Activity log write failed: {log_err}", file=sys.stderr)
 
         print(json.dumps({"prompt": optimized}))
 

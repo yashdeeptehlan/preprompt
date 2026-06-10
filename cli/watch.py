@@ -22,7 +22,10 @@ _W   = 64
 
 
 def _header() -> None:
-    os.system("clear")
+    # ANSI clear-screen + cursor-home — works on macOS/Linux/Windows Terminal
+    # without invoking a shell (bandit B605). Falls back silently on dumb TTYs.
+    sys.stdout.write("\x1b[2J\x1b[H")
+    sys.stdout.flush()
     print(f"  ⚡ PrePrompt — live activity feed")
     print(f"  watching ~/.preprompt/activity.log")
     print(f"  {'─' * 40}")

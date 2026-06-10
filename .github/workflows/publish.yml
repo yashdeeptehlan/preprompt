@@ -5,23 +5,22 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
         with:
           python-version: "3.11"
-
       - name: Install build
         run: pip install build
-
       - name: Build distribution
         run: python -m build
-
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@5d5d22a31266ced268874388b861e4b58bb5c2f3  # v4.3.1
         with:
           name: dist
           path: dist/
@@ -29,14 +28,20 @@ jobs:
   publish:
     needs: build
     runs-on: ubuntu-latest
+    # The `release` environment requires manual approval — configure this in
+    # Settings → Environments → release → "Required reviewers". This is the
+    # M-9 mitigation: tag-triggered publish can't ship to PyPI unannounced.
     environment: release
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@6b208ae046db98c579e8a3aa621ab581ff575935  # v4.1.1
         with:
           name: dist
           path: dist/
-
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish to PyPI (trusted publisher + Sigstore)
+        # Pinned by SHA so a tag rewrite on pypa/gh-action-pypi-publish can't
+        # silently substitute the action that uploads our wheels.
+        uses: pypa/gh-action-pypi-publish@ec4db0b4ddc65acdf4bff5fa45ac92d78b56bdf0  # v1.9.0
+        with:
+          attestations: true

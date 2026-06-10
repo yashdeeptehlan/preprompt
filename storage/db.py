@@ -1,18 +1,31 @@
 """SQLite storage for PrePrompt — persists to ~/.preprompt/history.db."""
 
+import logging
 import os
 import uuid
 import json
 import socket
 import sqlite3
+import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+logger = logging.getLogger("preprompt.storage")
+
 _DB_PATH = Path.home() / ".preprompt" / "history.db"
 _session_lock = threading.Lock()
+_write_lock = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
+
+
+def _chmod_user_only(path: Path) -> None:
+    """Best-effort chmod 0o600 — silently no-op on Windows / unsupported FS."""
+    try:
+        os.chmod(path, 0o600)
+    except (OSError, NotImplementedError):
+        pass
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -78,22 +91,36 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
 
 # ── Connection factory functions ──────────────────────────────────────────────
 
+def _prepare_db_dir() -> bool:
+    """Create the parent dir and return True if the DB file is being created now."""
+    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return not _DB_PATH.exists()
+
+
+def _harden_db_file() -> None:
+    """Lock down history.db so other UNIX users can't read it (audit L-13)."""
+    if _DB_PATH.exists():
+        _chmod_user_only(_DB_PATH)
+
+
 def _get_connection() -> sqlite3.Connection:
     """Return the long-lived write connection for this process (MCP server)."""
     global _conn
     if _conn is None:
-        _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        is_new = _prepare_db_dir()
         _conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA synchronous=NORMAL")
         _conn.execute("PRAGMA busy_timeout=5000")
         _ensure_schema(_conn)
+        if is_new:
+            _harden_db_file()
     return _conn
 
 
 def get_read_connection() -> sqlite3.Connection:
     """Fresh read connection — safe alongside a running MCP server (WAL mode)."""
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _prepare_db_dir()
     conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
@@ -102,12 +129,14 @@ def get_read_connection() -> sqlite3.Connection:
 
 def get_write_connection() -> sqlite3.Connection:
     """Fresh write connection for hook subprocess. Caller must close it."""
-    _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    is_new = _prepare_db_dir()
     conn = sqlite3.connect(str(_DB_PATH), check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=5000")
     _ensure_schema(conn)
+    if is_new:
+        _harden_db_file()
     return conn
 
 
@@ -126,16 +155,22 @@ def get_or_create_session() -> str:
 
     with _session_lock:
         conn = _get_connection()
-        conn.execute(
-            "INSERT OR IGNORE INTO sessions (session_id, started_at, last_seen_at, hostname, pid) "
-            "VALUES (?, ?, ?, ?, ?)",
-            [session_key, _now(), _now(), hostname, os.getpid()],
-        )
-        conn.execute(
-            "UPDATE sessions SET last_seen_at = ?, pid = ? WHERE session_id = ?",
-            [_now(), os.getpid(), session_key],
-        )
-        conn.commit()
+        with _write_lock:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO sessions (session_id, started_at, last_seen_at, hostname, pid) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    [session_key, _now(), _now(), hostname, os.getpid()],
+                )
+                conn.execute(
+                    "UPDATE sessions SET last_seen_at = ?, pid = ? WHERE session_id = ?",
+                    [_now(), os.getpid(), session_key],
+                )
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
     return session_key
 
 
@@ -150,26 +185,37 @@ def save_prompt_event(
     session_id: str,
     route: str = "enrich",
 ) -> str:
-    """Insert a prompt event and return its generated id."""
+    """Insert a prompt event and return its generated id.
+
+    Audit M-6: serialise writes through _write_lock + BEGIN IMMEDIATE so the
+    shared process-wide connection (used by MCP server and dashboard flush)
+    can't interleave statements between INSERT and COMMIT.
+    """
     event_id = str(uuid.uuid4())
     conn = _get_connection()
-    conn.execute("""
-        INSERT INTO prompt_history
-            (id, timestamp, original_prompt, optimized_prompt,
-             classifier_score, was_intercepted, turn_number, session_id, route)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, [
-        event_id,
-        _now(),
-        original_prompt,
-        optimized_prompt,
-        classifier_score,
-        1 if was_intercepted else 0,
-        turn_number,
-        session_id,
-        route,
-    ])
-    conn.commit()
+    with _write_lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("""
+                INSERT INTO prompt_history
+                    (id, timestamp, original_prompt, optimized_prompt,
+                     classifier_score, was_intercepted, turn_number, session_id, route)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                event_id,
+                _now(),
+                original_prompt,
+                optimized_prompt,
+                classifier_score,
+                1 if was_intercepted else 0,
+                turn_number,
+                session_id,
+                route,
+            ])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     return event_id
 
 
@@ -228,32 +274,38 @@ def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
     - Same key + different value: reset confidence to 0.6, reset source_count to 1.
     """
     conn = _get_connection()
-    existing = conn.execute(
-        "SELECT id, value, confidence, source_count FROM stack_memory WHERE key = ?",
-        [key],
-    ).fetchone()
+    with _write_lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            existing = conn.execute(
+                "SELECT id, value, confidence, source_count FROM stack_memory WHERE key = ?",
+                [key],
+            ).fetchone()
 
-    if existing:
-        entry_id, existing_value, existing_confidence, source_count = existing
-        if existing_value == value:
-            new_confidence = min(0.99, existing_confidence + 0.03)
-            conn.execute("""
-                UPDATE stack_memory
-                SET updated_at = ?, confidence = ?, source_count = ?
-                WHERE id = ?
-            """, [_now(), new_confidence, source_count + 1, entry_id])
-        else:
-            conn.execute("""
-                UPDATE stack_memory
-                SET updated_at = ?, value = ?, confidence = 0.6, source_count = 1
-                WHERE id = ?
-            """, [_now(), value, entry_id])
-    else:
-        conn.execute("""
-            INSERT INTO stack_memory (id, updated_at, key, value, confidence, source_count)
-            VALUES (?, ?, ?, ?, ?, 1)
-        """, [str(uuid.uuid4()), _now(), key, value, confidence])
-    conn.commit()
+            if existing:
+                entry_id, existing_value, existing_confidence, source_count = existing
+                if existing_value == value:
+                    new_confidence = min(0.99, existing_confidence + 0.03)
+                    conn.execute("""
+                        UPDATE stack_memory
+                        SET updated_at = ?, confidence = ?, source_count = ?
+                        WHERE id = ?
+                    """, [_now(), new_confidence, source_count + 1, entry_id])
+                else:
+                    conn.execute("""
+                        UPDATE stack_memory
+                        SET updated_at = ?, value = ?, confidence = 0.6, source_count = 1
+                        WHERE id = ?
+                    """, [_now(), value, entry_id])
+            else:
+                conn.execute("""
+                    INSERT INTO stack_memory (id, updated_at, key, value, confidence, source_count)
+                    VALUES (?, ?, ?, ?, ?, 1)
+                """, [str(uuid.uuid4()), _now(), key, value, confidence])
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def get_stack_memory_with_confidence() -> list[dict]:
@@ -337,11 +389,17 @@ def get_full_stack_memory() -> list[dict]:
 def record_user_feedback(event_id: str, kept: bool) -> None:
     """Record whether user kept (1) or rejected (0) the optimization."""
     conn = _get_connection()
-    conn.execute(
-        "UPDATE prompt_history SET user_kept = ? WHERE id = ?",
-        [1 if kept else 0, event_id],
-    )
-    conn.commit()
+    with _write_lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "UPDATE prompt_history SET user_kept = ? WHERE id = ?",
+                [1 if kept else 0, event_id],
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def get_feedback_stats() -> dict:
@@ -379,39 +437,54 @@ def flush_pending_hook_events() -> dict:
     """Read all JSON sidecar files from ~/.preprompt/pending/, insert into
     prompt_history, delete each file.
 
-    Returns {"count": N, "prompts": [{"prompt": str, "history": list}, ...]}
-    so callers can run update_memory_from_prompt without storage importing
-    mcp_server (which would create a circular dependency).
+    Audit M-7: malformed sidecars used to be silently dropped — production
+    losing analytics data the moment a hook wrote a bad file. Failures are now
+    logged and the file is moved to ``pending/failed/`` for postmortem rather
+    than discarded.
+
+    Returns {"count": N, "prompts": [{"prompt": str, "history": list}, ...]}.
     """
     pending_dir = Path.home() / ".preprompt" / "pending"
     if not pending_dir.exists():
         return {"count": 0, "prompts": []}
 
+    failed_dir = pending_dir / "failed"
     conn = _get_connection()
     flushed = 0
     prompts = []
     for sidecar_path in pending_dir.glob("*.json"):
         try:
             data = json.loads(sidecar_path.read_text())
-            conn.execute("""
-                INSERT OR IGNORE INTO prompt_history
-                    (id, timestamp, original_prompt, optimized_prompt,
-                     classifier_score, was_intercepted, turn_number, session_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                str(uuid.uuid4()),
-                datetime.fromtimestamp(data["timestamp"], tz=timezone.utc).isoformat(),
-                data["original_prompt"],
-                data["optimized_prompt"],
-                data["classifier_score"],
-                1 if data["was_intercepted"] else 0,
-                data["turn_number"],
-                "hook-session",
-            ])
-            conn.commit()
+            with _write_lock:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    conn.execute("""
+                        INSERT OR IGNORE INTO prompt_history
+                            (id, timestamp, original_prompt, optimized_prompt,
+                             classifier_score, was_intercepted, turn_number, session_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [
+                        str(uuid.uuid4()),
+                        datetime.fromtimestamp(data["timestamp"], tz=timezone.utc).isoformat(),
+                        data["original_prompt"],
+                        data["optimized_prompt"],
+                        data["classifier_score"],
+                        1 if data["was_intercepted"] else 0,
+                        data["turn_number"],
+                        "hook-session",
+                    ])
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
             sidecar_path.unlink()
             flushed += 1
             prompts.append({"prompt": data["original_prompt"], "history": []})
         except Exception:
-            pass
+            logger.warning("failed to flush sidecar %s", sidecar_path.name, exc_info=True)
+            try:
+                failed_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(sidecar_path), str(failed_dir / sidecar_path.name))
+            except Exception:
+                logger.exception("quarantining sidecar failed")
     return {"count": flushed, "prompts": prompts}

@@ -7,13 +7,18 @@ import os
 import re
 import json
 import time
+import uuid
+import logging
+import ipaddress
+from datetime import datetime, timezone
+from urllib.parse import quote, urlparse
+
 import httpx
 import stripe
 import anthropic
 import sentry_sdk
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 from sentry_sdk.integrations.httpx import HttpxIntegration
-from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Depends, HTTPException
@@ -21,21 +26,66 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
+# ── Logging ───────────────────────────────────────────────────────────────────
+# Format includes a correlation_id slot; records without one get "-" via the
+# filter below so we never raise KeyError inside logging.
+
+class _CorrelationFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "correlation_id"):
+            record.correlation_id = "-"
+        return True
+
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(name)s [%(correlation_id)s] %(message)s",
+)
+for _h in logging.getLogger().handlers:
+    _h.addFilter(_CorrelationFilter())
+
+logger = logging.getLogger("preprompt.backend")
+
+
 # ── Sentry ────────────────────────────────────────────────────────────────────
 
-def _scrub_sensitive(event: dict) -> dict:
-    """Remove prompt text from Sentry events to protect user privacy."""
+_PII_KEYS = frozenset({
+    "prompt", "optimized", "optimized_prompt", "user_prompt",
+    "conversation_history", "original_prompt", "email",
+    "customer_email", "api_key", "anthropic_api_key",
+})
+
+
+def _scrub_dict(obj):
+    """Recursively redact PII keys anywhere in a Sentry event payload."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            if isinstance(k, str) and k.lower() in _PII_KEYS:
+                out[k] = "[REDACTED]"
+            else:
+                out[k] = _scrub_dict(v)
+        return out
+    if isinstance(obj, list):
+        return [_scrub_dict(v) for v in obj]
+    return obj
+
+
+def _scrub_sensitive(event: dict, _hint: dict | None = None) -> dict:
+    """Strip prompts, secrets, stack-frame locals from Sentry events."""
     try:
-        if "request" in event and "data" in event["request"]:
-            if "prompt" in event["request"]["data"]:
-                event["request"]["data"]["prompt"] = "[REDACTED]"
+        for frame_root in ("exception", "threads"):
+            entries = (event.get(frame_root) or {}).get("values") or []
+            for entry in entries:
+                for frame in (entry.get("stacktrace") or {}).get("frames") or []:
+                    frame.pop("vars", None)
+        event = _scrub_dict(event)
     except Exception:
-        pass
+        logger.exception("sentry scrub failed")
     return event
 
 
@@ -47,7 +97,10 @@ if _SENTRY_DSN:
         traces_sample_rate=0.1,
         profiles_sample_rate=0.1,
         environment=os.environ.get("RAILWAY_ENVIRONMENT", "production"),
-        before_send=lambda event, hint: _scrub_sensitive(event),
+        send_default_pii=False,
+        include_local_variables=False,
+        before_send=_scrub_sensitive,
+        before_send_transaction=_scrub_sensitive,
     )
 
 # ── Inline classifier / optimizer ─────────────────────────────────────────────
@@ -220,23 +273,63 @@ def _route_prompt(prompt: str) -> dict:
 
 
 _SECRET_PATTERNS = [
-    ("aws_access_key",     re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("aws_secret_key",     re.compile(r"[0-9a-zA-Z/+]{40}")),
-    ("anthropic_api_key",  re.compile(r"sk-ant-[a-zA-Z0-9\-_]{20,}", re.IGNORECASE)),
-    ("openai_api_key",     re.compile(r"sk-[a-zA-Z0-9]{48}", re.IGNORECASE)),
-    ("github_token",       re.compile(r"gh[pousr]_[A-Za-z0-9_]{36,}")),
-    ("stripe_key",         re.compile(r"[rs]k_(live|test)_[0-9a-zA-Z]{24,}", re.IGNORECASE)),
-    ("private_key_header", re.compile(r"-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----")),
-    ("bearer_token",       re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*")),
-    ("generic_api_key",    re.compile(r"['\"]?api[_-]?key['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9\-_]{20,}", re.IGNORECASE)),
-    ("password_pattern",   re.compile(r"['\"]?password['\"]?\s*[:=]\s*['\"]?[^\s'\"]{8,}", re.IGNORECASE)),
-    ("connection_string",  re.compile(r"(postgres|mysql|mongodb|redis)://[^\s]+:[^\s]+@", re.IGNORECASE)),
+    # Tightened patterns — see mcp_server/secret_scanner.py for the canonical
+    # version. These must stay in sync; the backend ships an isolated copy
+    # because Railway does not have the mcp_server package on PYTHONPATH.
+    ("aws_access_key",     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("aws_secret_key",     re.compile(r"(?is)aws[A-Za-z0-9_\-]*secret[^\n]{0,60}?\b[A-Za-z0-9/+]{40}\b")),
+    ("anthropic_api_key",  re.compile(r"\bsk-ant-(?:api|admin)[A-Za-z0-9_\-]{20,}\b")),
+    ("openai_api_key",     re.compile(r"\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_\-]{40,}\b")),
+    ("github_token",       re.compile(r"\bgh[pousr]_[A-Za-z0-9_]{36,}\b")),
+    ("stripe_key",         re.compile(r"\b(?:sk|rk)_(?:live|test)_[0-9A-Za-z]{24,}\b")),
+    ("private_key_header", re.compile(r"-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
+    ("bearer_token",       re.compile(r"\b[Bb]earer\s+[A-Za-z0-9\-._~+/]{20,}=*")),
+    ("generic_api_key",    re.compile(r"(?i)\bapi[_-]?key\b\s*[:=]\s*['\"][A-Za-z0-9\-_]{20,}['\"]")),
+    ("password_pattern",   re.compile(r"(?i)(?<![A-Za-z])password\s*[:=]\s*['\"][^\s'\"]{8,}['\"]")),
+    ("connection_string",  re.compile(r"(?i)\b(?:postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis)://[^\s:@]+:[^\s:@]+@\S+")),
 ]
 
 
 def _scan_for_secrets(text: str) -> list[str]:
-    # Railway can't import mcp_server — patterns mirrored from mcp_server/secret_scanner.py
     return [name for name, pattern in _SECRET_PATTERNS if pattern.search(text)]
+
+
+_CONTROL_SEQ_RE = re.compile(r"(?:<\|[^|]{0,40}\|>|\{\{[^}]{0,40}\}\}|<\|im_(?:start|end)\|>)")
+
+
+def _sanitize_history(history: list) -> list:
+    """Remove role-injection markers from history before sending to the model."""
+    cleaned = []
+    for turn in history or []:
+        if not isinstance(turn, dict):
+            continue
+        content = str(turn.get("content", ""))
+        cleaned.append({
+            "role": turn.get("role", "user"),
+            "content": _CONTROL_SEQ_RE.sub("", content),
+        })
+    return cleaned
+
+
+_MAX_OPTIMIZED_BLOWUP = 4  # reject rewrites that explode prompt length
+
+
+def _validate_optimizer_output(original: str, candidate: str) -> tuple[str, str]:
+    """Return (sanitized_optimized, reason).
+
+    Drop candidates that look like prompt-injection success (length blowup or
+    rediscovered secrets that weren't in the original). Falls back to the
+    original prompt with a reason on rejection.
+    """
+    if not isinstance(candidate, str) or not candidate.strip():
+        return original, "Optimizer returned empty output; original prompt used."
+    if len(candidate) > _MAX_OPTIMIZED_BLOWUP * max(len(original), 64):
+        return original, "Optimizer output exceeded length budget; original prompt used."
+    leaked = set(_scan_for_secrets(candidate)) - set(_scan_for_secrets(original))
+    if leaked:
+        logger.warning("optimizer output added new secret-like content: %s", sorted(leaked))
+        return original, "Optimizer output contained sensitive content; original prompt used."
+    return candidate, ""
 
 
 def _optimize(prompt: str) -> dict:
@@ -257,12 +350,15 @@ def _optimize(prompt: str) -> dict:
             raw = raw[raw.find("\n") + 1:]
             raw = raw.rsplit("```", 1)[0].strip()
         data = json.loads(raw)
+        candidate = data.get("optimized_prompt", prompt)
+        sanitized, override_reason = _validate_optimizer_output(prompt, candidate)
         return {
-            "optimized_prompt": data.get("optimized_prompt", prompt),
-            "reason": data.get("reason", ""),
-            "changes_made": data.get("changes_made", []),
+            "optimized_prompt": sanitized,
+            "reason": override_reason or data.get("reason", ""),
+            "changes_made": [] if override_reason else data.get("changes_made", []),
         }
     except Exception:
+        logger.exception("optimizer call failed")
         return {"optimized_prompt": prompt, "reason": "Optimization unavailable; original prompt returned.", "changes_made": []}
 
 
@@ -276,29 +372,149 @@ DEMO_LIMIT = int(os.environ.get("DEMO_LIMIT", "2"))
 
 stripe.api_key = STRIPE_SECRET_KEY
 
-limiter = Limiter(key_func=get_remote_address)
+
+# ── Trusted reverse proxies ───────────────────────────────────────────────────
+# X-Forwarded-For is only honoured when the request comes from one of these
+# networks. Railway publishes its egress ranges; configure via env so we can
+# update without a redeploy. Localhost is trusted by default for dev.
+
+_DEFAULT_TRUSTED_PROXIES = "127.0.0.1/32,::1/128"
+
+
+def _parse_networks(raw: str) -> list:
+    nets = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(token, strict=False))
+        except ValueError:
+            logger.warning("ignoring invalid TRUSTED_PROXIES entry: %s", token)
+    return nets
+
+
+_TRUSTED_PROXIES = _parse_networks(
+    os.environ.get("TRUSTED_PROXIES", _DEFAULT_TRUSTED_PROXIES)
+)
+
+
+def _peer_ip(request: Request) -> str:
+    return request.client.host if request.client else ""
+
+
+def _is_trusted_proxy(addr: str) -> bool:
+    if not addr:
+        return False
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(ip in net for net in _TRUSTED_PROXIES)
+
+
+# ── Origin allow-list ─────────────────────────────────────────────────────────
+
+
+def _parse_origins(raw: str) -> list[str]:
+    origins = []
+    for token in raw.split(","):
+        token = token.strip().rstrip("/")
+        if token:
+            origins.append(token)
+    return origins
+
+
+_ALLOWED_ORIGINS = _parse_origins(
+    os.environ.get("ALLOWED_ORIGINS", "https://preprompt.org")
+)
+_DEV_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _allowed_origin_hosts() -> set[str]:
+    hosts = set()
+    for origin in _ALLOWED_ORIGINS:
+        parsed = urlparse(origin)
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
+    return hosts
+
+
+def _origin_is_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    try:
+        parsed = urlparse(origin)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if host in _DEV_LOOPBACK_HOSTS and os.environ.get("ALLOW_LOCAL_ORIGINS", "0") == "1":
+        return True
+    return host in _allowed_origin_hosts()
+
+
+def _client_ip_for_limit(request: Request) -> str:
+    """SlowAPI key function — only honour XFF from trusted proxies."""
+    peer = _peer_ip(request)
+    if _is_trusted_proxy(peer):
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            # Walk right-to-left, drop proxies we trust until we find the client.
+            hops = [h.strip() for h in forwarded.split(",") if h.strip()]
+            for hop in reversed(hops):
+                if not _is_trusted_proxy(hop):
+                    return hop
+            if hops:
+                return hops[0]
+    return peer or "unknown"
+
+
+limiter = Limiter(key_func=_client_ip_for_limit)
 app = FastAPI(title="PrePrompt Demo API", version="0.1.9")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS or ["https://preprompt.org"],
+    allow_origin_regex=None,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
+    max_age=600,
 )
+
+
+# ── Correlation IDs + error envelope ──────────────────────────────────────────
+
+@app.middleware("http")
+async def _correlation_middleware(request: Request, call_next):
+    cid = request.headers.get("X-Preprompt-Trace-Id") or uuid.uuid4().hex[:16]
+    request.state.correlation_id = cid
+    extra = {"correlation_id": cid}
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("unhandled error", extra=extra)
+        return JSONResponse(
+            {"error": "internal_error", "correlation_id": cid},
+            status_code=500,
+            headers={"X-Preprompt-Trace-Id": cid},
+        )
+    response.headers["X-Preprompt-Trace-Id"] = cid
+    return response
 
 
 # ── Security dependencies ─────────────────────────────────────────────────────
 
 def verify_origin(request: Request):
     origin = request.headers.get("origin") or request.headers.get("referer", "")
-    allowed = os.environ.get("ALLOWED_ORIGINS", "https://preprompt.org").split(",")
-    allowed = [o.strip() for o in allowed]
-    if "localhost" in origin or "127.0.0.1" in origin:
-        return True
-    if not any(origin.startswith(a) for a in allowed):
-        raise HTTPException(status_code=403, detail="Origin not allowed")
+    if not _origin_is_allowed(origin):
+        raise HTTPException(status_code=403, detail="origin_not_allowed")
     return True
 
 
@@ -329,10 +545,23 @@ async def _verify_jwt(token: str) -> str | None:
     return None
 
 
+_TRACKING_KEY_RE = re.compile(r"^(?:user:[A-Za-z0-9\-]{8,64}|ip:[A-Za-z0-9:.\-]{2,45})$")
+
+
+def _safe_tracking_key(raw: str) -> str:
+    """Return a normalised tracking key, falling back to a static bucket on garbage."""
+    candidate = raw if raw.startswith(("user:", "ip:")) else f"ip:{raw}"
+    if _TRACKING_KEY_RE.match(candidate):
+        return candidate
+    logger.warning("rejecting malformed tracking key %r — using unknown bucket", raw)
+    return "ip:unknown"
+
+
 async def _get_usage_count(key: str) -> int:
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         return 0
-    url = f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}&select=count"
+    encoded = quote(key, safe="")
+    url = f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{encoded}&select=count"
     async with httpx.AsyncClient() as client:
         r = await client.get(url, headers=_sb_headers(), timeout=5)
         rows = r.json()
@@ -344,18 +573,33 @@ async def _get_usage_count(key: str) -> int:
 async def _upsert_usage(key: str, current_count: int) -> int:
     """Increment usage count and return the new count.
 
-    Uses POST for first use (current_count == 0) and PATCH for subsequent uses,
-    with Prefer: return=representation so the updated row comes back without a
-    second round-trip. Race condition window is narrow (DEMO_LIMIT=2 makes any
-    over-count low-risk); a stored-proc RPC would close it fully.
+    Prefers the ``increment_demo_usage`` Supabase RPC for an atomic
+    SELECT+UPDATE round-trip. Falls back to the previous POST/PATCH flow when
+    the RPC is unavailable so existing deployments keep working.
     """
     if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
         return current_count + 1
 
     new_count = current_count + 1
+    encoded = quote(key, safe="")
     rpr_headers = {**_sb_headers(), "Content-Type": "application/json", "Prefer": "return=representation"}
 
     async with httpx.AsyncClient(timeout=5) as client:
+        try:
+            rpc = await client.post(
+                f"{SUPABASE_URL}/rest/v1/rpc/increment_demo_usage",
+                json={"p_key": key, "p_limit": DEMO_LIMIT},
+                headers={**_sb_headers(), "Content-Type": "application/json"},
+            )
+            if rpc.status_code == 200:
+                data = rpc.json()
+                if isinstance(data, dict) and "count" in data:
+                    return int(data["count"])
+                if isinstance(data, int):
+                    return int(data)
+        except Exception:
+            logger.exception("increment_demo_usage RPC failed; falling back")
+
         if current_count == 0:
             r = await client.post(
                 f"{SUPABASE_URL}/rest/v1/demo_usage",
@@ -364,7 +608,7 @@ async def _upsert_usage(key: str, current_count: int) -> int:
             )
         else:
             r = await client.patch(
-                f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{key}",
+                f"{SUPABASE_URL}/rest/v1/demo_usage?ip=eq.{encoded}",
                 json={"count": new_count, "last_used_at": "now()"},
                 headers=rpr_headers,
             )
@@ -377,10 +621,18 @@ async def _upsert_usage(key: str, current_count: int) -> int:
 
 # ── Email ─────────────────────────────────────────────────────────────────────
 
+def _mask_email(email: str) -> str:
+    if not email or "@" not in email:
+        return "[redacted]"
+    local, _, domain = email.partition("@")
+    masked_local = (local[:1] + "***") if local else "***"
+    return f"{masked_local}@{domain}"
+
+
 async def send_thankyou_email(email: str, plan: str) -> None:
     resend_key = os.environ.get("RESEND_API_KEY", "")
     if not resend_key:
-        print(f"[PrePrompt] RESEND_API_KEY not set, skipping email to {email}")
+        logger.info("RESEND_API_KEY not set; skipping welcome email to %s", _mask_email(email))
         return
 
     plan_name = "Solo" if plan == "solo" else "Pro"
@@ -425,9 +677,13 @@ preprompt.org"""
                     "text": email_body,
                 },
             )
-            print(f"[PrePrompt] Email sent to {email}: {response.status_code} {response.text}")
-    except Exception as e:
-        print(f"[PrePrompt] Email failed for {email}: {e}")
+            logger.info(
+                "welcome email to %s: status=%s",
+                _mask_email(email),
+                response.status_code,
+            )
+    except Exception:
+        logger.exception("welcome email send failed for %s", _mask_email(email))
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -443,10 +699,7 @@ class CheckoutRequest(BaseModel):
 
 
 def _get_client_ip(request: Request) -> str:
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return _client_ip_for_limit(request)
 
 
 @app.post("/api/demo")
@@ -463,7 +716,8 @@ async def demo(request: Request, body: DemoRequest, _o=Depends(verify_origin)) -
     user_id: str | None = None
     if auth_header.startswith("Bearer "):
         user_id = await _verify_jwt(auth_header[7:])
-    tracking_key = f"user:{user_id}" if user_id else _get_client_ip(request)
+    raw_key = f"user:{user_id}" if user_id else f"ip:{_get_client_ip(request)}"
+    tracking_key = _safe_tracking_key(raw_key)
 
     # Step 1: enforce limit server-side BEFORE any processing
     current_count = await _get_usage_count(tracking_key)
@@ -564,22 +818,37 @@ async def create_checkout_session(body: CheckoutRequest, _o=Depends(verify_origi
             "user_id": body.user_id,
         })
         return JSONResponse({"checkout_url": session.url})
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        cid = getattr(request.state, "correlation_id", "-") if hasattr(request, "state") else "-"
+        logger.exception("checkout session create failed", extra={"correlation_id": cid})
+        raise HTTPException(status_code=500, detail="checkout_failed")
 
 
 @app.post("/api/webhook")
 async def stripe_webhook(request: Request) -> JSONResponse:
+    cid = getattr(request.state, "correlation_id", "-")
+    extra = {"correlation_id": cid}
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
 
-    if STRIPE_WEBHOOK_SECRET:
-        try:
-            event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid signature")
-    else:
-        event = json.loads(payload)
+    if not STRIPE_WEBHOOK_SECRET:
+        # Fail-closed: never accept unsigned webhooks. Without this guard, any
+        # caller could forge a checkout.session.completed event and grant
+        # themselves a paid subscription or trigger welcome emails to arbitrary
+        # addresses (H-1).
+        logger.error("rejected webhook: STRIPE_WEBHOOK_SECRET not configured", extra=extra)
+        raise HTTPException(status_code=503, detail="webhook_not_configured")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="missing_signature")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        logger.warning("rejected webhook: invalid signature", extra=extra)
+        raise HTTPException(status_code=400, detail="invalid_signature")
+    except Exception:
+        logger.exception("webhook parse error", extra=extra)
+        raise HTTPException(status_code=400, detail="invalid_payload")
 
     if event["type"] == "checkout.session.completed":
         try:
@@ -591,7 +860,13 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             subscription_id = session.subscription
             customer_email = session.customer_details.email if session.customer_details else None
 
-            if user_id and SUPABASE_URL and SUPABASE_SECRET_KEY:
+            # H-8: only act when metadata.user_id is present. customer_email is
+            # used only for display / welcome mail — never as the upsert key.
+            if not user_id:
+                logger.warning("webhook checkout.session.completed without user_id metadata", extra=extra)
+                return JSONResponse({"status": "ignored"})
+
+            if SUPABASE_URL and SUPABASE_SECRET_KEY:
                 async with httpx.AsyncClient() as client:
                     await client.post(
                         f"{SUPABASE_URL}/rest/v1/user_profiles",
@@ -607,52 +882,49 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                             "stripe_customer_id": customer_id,
                             "stripe_subscription_id": subscription_id,
                             "subscription_status": "active",
-                            "subscription_started_at": datetime.utcnow().isoformat(),
+                            "subscription_started_at": datetime.now(timezone.utc).isoformat(),
                             "demo_tries_used": 0,
                         },
                         timeout=10,
                     )
 
-            if user_id:
-                from analytics import track, identify
-                identify(user_id, {"plan": plan, "email": customer_email or ""})
-                track("subscription_activated", user_id, {
-                    "plan": plan,
-                    "user_id": user_id,
-                })
+            from analytics import track, identify
+            identify(user_id, {"plan": plan})
+            track("subscription_activated", user_id, {"plan": plan, "user_id": user_id})
 
             if customer_email:
                 try:
                     await send_thankyou_email(customer_email, plan)
-                except Exception as email_err:
-                    print(f"[PrePrompt] Email error: {email_err}")
+                except Exception:
+                    logger.exception("welcome email failed", extra=extra)
 
-        except Exception as webhook_err:
-            print(f"[PrePrompt] Webhook processing error: {webhook_err}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            logger.exception("webhook processing error", extra=extra)
 
     return JSONResponse({"status": "ok"})
 
 
 @app.get("/api/verify-session")
-async def verify_session(session_id: str) -> JSONResponse:
+async def verify_session(request: Request, session_id: str) -> JSONResponse:
+    cid = getattr(request.state, "correlation_id", "-")
+    extra = {"correlation_id": cid}
     if not STRIPE_SECRET_KEY:
-        raise HTTPException(status_code=503, detail="Payments not configured")
+        raise HTTPException(status_code=503, detail="payments_not_configured")
+    if not re.match(r"^cs_(?:test|live)_[A-Za-z0-9]{20,}$", session_id):
+        raise HTTPException(status_code=400, detail="invalid_session_id")
     try:
-        import logging
-        logging.info(f"Verifying session: {session_id[:20]}...")
         session = stripe.checkout.Session.retrieve(session_id)
-        logging.info(f"Session status: {session.status}, payment: {session.payment_status}")
         return JSONResponse({
             "success": True,
             "plan": (session.metadata["plan"] if session.metadata and "plan" in session.metadata else "solo"),
-            "email": (session.customer_details.email if session.customer_details and hasattr(session.customer_details, 'email') else ""),
+            "email": (session.customer_details.email if session.customer_details and hasattr(session.customer_details, "email") else ""),
         })
-    except stripe.error.StripeError as e:
-        raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error: {type(e).__name__}: {str(e)}")
+    except stripe.error.StripeError:
+        logger.exception("verify-session stripe error", extra=extra)
+        raise HTTPException(status_code=400, detail="stripe_error")
+    except Exception:
+        logger.exception("verify-session unexpected error", extra=extra)
+        raise HTTPException(status_code=500, detail="internal_error")
 
 
 @app.get("/health")

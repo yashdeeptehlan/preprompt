@@ -5,20 +5,68 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      # Pinned by SHA — moving tags can be silently rewritten by maintainer
+      # takeover. Dependabot can bump these safely (see .github/dependabot.yml).
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
         with:
           python-version: "3.11"
-
       - name: Install dev deps
         run: pip install -e ".[dev]"
-
       - name: Run tests
         env:
-          ANTHROPIC_API_KEY: sk-ant-test-dummy-key-for-ci
+          # detect-secrets is taught to allow this exact placeholder via
+          # .secrets.baseline. Real CI runs may override via repo secret.
+          ANTHROPIC_API_KEY: ${{ secrets.TEST_ANTHROPIC_KEY || 'sk-ant-test-dummy-key-for-ci' }}
         run: python -m pytest -v
+
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+      - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c  # v5.0.0
+        with:
+          python-version: "3.11"
+      - name: Install security tooling
+        run: pip install bandit pip-audit detect-secrets
+      - name: bandit (static analysis)
+        run: bandit -r mcp_server cli storage backend dashboard scripts -ll
+      - name: pip-audit (dependency vulnerabilities)
+        run: |
+          pip install -e .
+          pip-audit --strict
+      - name: detect-secrets (committed credentials)
+        run: detect-secrets scan --baseline .secrets.baseline
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+      - uses: actions/dependency-review-action@5a2ce3f5b92ee19cbb1541a4984c76d921601d7c  # v4.3.4
+        with:
+          fail-on-severity: high
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
+      - uses: github/codeql-action/init@012739e5082ff0c22ca6d6ab32e07c36df03c4a4  # v3.25.10
+        with:
+          languages: python
+      - uses: github/codeql-action/analyze@012739e5082ff0c22ca6d6ab32e07c36df03c4a4  # v3.25.10

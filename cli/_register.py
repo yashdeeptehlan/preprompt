@@ -56,6 +56,12 @@ def register_hooks(api_key: str = "") -> None:
 
         _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         _SETTINGS_PATH.write_text(json.dumps(settings, indent=2) + "\n")
+        # Audit L-9: settings.json holds the Anthropic API key. Restrict reads
+        # to the owning user so other accounts on a shared box can't grab it.
+        try:
+            os.chmod(_SETTINGS_PATH, 0o600)
+        except (OSError, NotImplementedError):
+            pass
     else:
         print("  Claude Code not detected — skipping Claude Code hook")
 
