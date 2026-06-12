@@ -7,5 +7,5 @@ mcp>=1.0.0
 pydantic-settings>=2.0.0
 slowapi>=0.1.9
 stripe>=8.0.0
-sentry-sdk[fastapi]>=1.40.0
+sentry-sdk[fastapi]>=2.62.0
 posthog>=3.0.0
