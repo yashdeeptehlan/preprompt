@@ -242,14 +242,16 @@ def get_all_history(limit: int = 100, intercepted_only: bool = False) -> list[di
     try:
         rows = conn.execute(f"""
             SELECT id, timestamp, original_prompt, optimized_prompt,
-                   classifier_score, was_intercepted, turn_number, session_id, route
+                   classifier_score, was_intercepted, turn_number, session_id, route,
+                   user_kept
             FROM prompt_history
             {where}
             ORDER BY timestamp DESC
             LIMIT ?
         """, [limit]).fetchall()
         cols = ["id", "timestamp", "original_prompt", "optimized_prompt",
-                "classifier_score", "was_intercepted", "turn_number", "session_id", "route"]
+                "classifier_score", "was_intercepted", "turn_number", "session_id", "route",
+                "user_kept"]
         return [_coerce_row(dict(zip(cols, row))) for row in rows]
     finally:
         conn.close()
@@ -400,6 +402,64 @@ def record_user_feedback(event_id: str, kept: bool) -> None:
         except Exception:
             conn.rollback()
             raise
+
+
+def get_d30_retention() -> list[dict]:
+    """Compute D30 retention cohorts from the local prompt_history table.
+
+    A "user" in single-machine local mode is proxied by ``session_id`` (one
+    session per hostname per calendar day in the current scheme). A session
+    is "retained at D30" if it has any prompt 28–32 days after its first.
+
+    Returns one row per ISO week of first activity, newest cohort first::
+
+        [
+          {"cohort_week": "2026-22", "cohort_size": 14, "retained_d30": 6,
+           "retention_pct": 42.9},
+          ...
+        ]
+
+    In production this same shape will be computed server-side on
+    ``usage_events`` using the canonical ``user_id`` — see W3 spec.
+    """
+    conn = get_read_connection()
+    try:
+        rows = conn.execute("""
+            WITH first_seen AS (
+                SELECT session_id, MIN(timestamp) AS first_ts
+                FROM prompt_history
+                WHERE session_id IS NOT NULL
+                GROUP BY session_id
+            ),
+            retained_sessions AS (
+                SELECT DISTINCT fs.session_id
+                FROM first_seen fs
+                JOIN prompt_history ph ON ph.session_id = fs.session_id
+                WHERE (julianday(ph.timestamp) - julianday(fs.first_ts))
+                      BETWEEN 28 AND 32
+            )
+            SELECT
+                strftime('%Y-%W', fs.first_ts)  AS cohort_week,
+                COUNT(DISTINCT fs.session_id)   AS cohort_size,
+                COUNT(DISTINCT r.session_id)    AS retained_d30
+            FROM first_seen fs
+            LEFT JOIN retained_sessions r ON r.session_id = fs.session_id
+            GROUP BY cohort_week
+            ORDER BY cohort_week DESC
+        """).fetchall()
+    finally:
+        conn.close()
+
+    out: list[dict] = []
+    for cohort_week, cohort_size, retained_d30 in rows:
+        pct = round(retained_d30 / cohort_size * 100, 1) if cohort_size else 0.0
+        out.append({
+            "cohort_week": cohort_week,
+            "cohort_size": cohort_size,
+            "retained_d30": retained_d30,
+            "retention_pct": pct,
+        })
+    return out
 
 
 def rate_last_intercepted(kept: bool) -> bool:

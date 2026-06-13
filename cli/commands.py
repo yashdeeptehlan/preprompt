@@ -150,12 +150,17 @@ def history_cmd() -> None:
 
 # ── preprompt-stats ──────────────────────────────────────────────────────────
 
+def _bar(pct: float, width: int = 18) -> str:
+    """Render a single-line ASCII bar of the given percentage."""
+    filled = int(round(pct / 100 * width))
+    return "█" * filled + "░" * (width - filled)
+
+
 def stats_cmd() -> None:
     maybe_run_setup()
     _check_for_updates()
-    from storage.db import flush_pending_hook_events
-    result = flush_pending_hook_events()
-    count = result["count"] if isinstance(result, dict) else result
+    from storage.db import flush_pending_hook_events, get_route_stats, get_feedback_stats
+    flush_pending_hook_events()
     conn = _open_db()
     row = conn.execute("""
         SELECT
@@ -166,7 +171,21 @@ def stats_cmd() -> None:
             COUNT(DISTINCT session_id)                         AS sessions
         FROM prompt_history
     """).fetchone()
+    # Top intercepted "starts" (first 2 words, lowercased) — surfaces the
+    # kinds of asks the optimizer keeps rewriting, without leaking full prompts.
+    # Aggregated in Python because SQLite's INSTR has no offset arg.
+    rows = conn.execute(
+        "SELECT original_prompt FROM prompt_history "
+        "WHERE was_intercepted = 1 AND original_prompt IS NOT NULL AND original_prompt != ''"
+    ).fetchall()
     conn.close()
+    from collections import Counter
+    starts = Counter()
+    for (p,) in rows:
+        words = (p or "").strip().split()[:2]
+        if words:
+            starts[" ".join(w.lower() for w in words)] += 1
+    top_starts = starts.most_common(5)
 
     total, intercepted, avg_score, avg_intercepted, sessions = row
     total        = total or 0
@@ -180,21 +199,40 @@ def stats_cmd() -> None:
         v = pkg_version("preprompt")
     except Exception:
         v = "dev"
-    sep = "─" * 46
+    sep = "─" * 56
     print(f" PrePrompt v{v} — optimization stats")
     print(sep)
     print(f" Total prompts seen:      {total}")
-    print(f" Prompts intercepted:     {intercepted} ({pct:.1f}%)")
+    print(f" Intercepted:             {intercepted} ({pct:.1f}%)")
+    print(f" Sessions tracked:        {sessions}")
     print(f" Avg classifier score:    {avg_score:.1f}")
     print(f" Avg score (intercepted): {avg_intercepted:.1f}")
-    print(f" Sessions tracked:        {sessions}")
-    print(f" DB path:                 {_DB_PATH}")
 
-    from storage.db import get_feedback_stats
+    routes = get_route_stats()
+    route_total = routes.get("total", 0)
+    if route_total:
+        print()
+        print(" Route breakdown:")
+        for r in ("pass", "enrich", "clarify"):
+            n = routes.get(r, 0)
+            rpct = (n / route_total * 100) if route_total else 0.0
+            print(f"   {r:<8} │ {_bar(rpct)} │ {n:>4} ({rpct:5.1f}%)")
+
     fb = get_feedback_stats()
     if fb["accept_rate"] is not None:
+        print()
         print(f" Accept rate:             {fb['accept_rate']}% "
               f"({fb['kept']} kept / {fb['rejected']} rejected)")
+
+    if top_starts:
+        print()
+        print(" Top intercepted starts:")
+        for start, n in top_starts:
+            label = (start or "")[:30]
+            print(f"   {label:<32} {n}×")
+
+    print()
+    print(f" DB path: {_DB_PATH}")
 
 
 # ── preprompt-test-classifier ────────────────────────────────────────────────

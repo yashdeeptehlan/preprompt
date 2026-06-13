@@ -107,6 +107,35 @@
   .stat-card.accent { border-left: 3px solid var(--amber); }
   .stat-card.green  { border-left: 3px solid var(--green); }
 
+  /* Hero accept-rate card: visually dominant, spans 2 columns on wider screens. */
+  .stat-card.hero {
+    border-left: 4px solid var(--green);
+    background: linear-gradient(180deg, #f0fdf4 0%, var(--card) 100%);
+    grid-column: span 2;
+  }
+  .stat-card.hero .value { font-size: 44px; }
+  .stat-card.hero .label { font-size: 12px; }
+  .stat-card.hero .sub {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+  }
+  .trend-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .trend-pill.up   { background: #d1fae5; color: #065f46; }
+  .trend-pill.down { background: #fee2e2; color: #991b1b; }
+  .trend-pill.flat { background: var(--border); color: var(--ink2); }
+  @media (max-width: 720px) { .stat-card.hero { grid-column: span 1; } }
+
   /* ── Two-col layout ── */
   .two-col {
     display: grid;
@@ -237,6 +266,76 @@
   .badge-yes     { background: #d1fae5; color: #065f46; }
   .badge-no      { background: #fee2e2; color: #991b1b; }
 
+  /* ── Diff view ── */
+  .history-table tr.expandable td { cursor: pointer; }
+  .history-table tr.expandable td:first-child::before {
+    content: "▸ ";
+    color: var(--ink2);
+    font-family: var(--mono);
+  }
+  .history-table tr.expandable.open td:first-child::before { content: "▾ "; }
+  .history-table tr.diff-row td {
+    padding: 0;
+    background: #fdf8f0;
+    border-bottom: 1px solid var(--border);
+  }
+  .diff-wrap {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .diff-col {
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.55;
+  }
+  .diff-col.original {
+    background: #fdf8f0;
+    color: var(--ink2);
+    border-right: 1px solid var(--border);
+  }
+  .diff-col.optimized {
+    background: #fffbeb;
+    color: var(--ink);
+  }
+  .diff-col .label {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--ink2);
+    margin-bottom: 6px;
+  }
+  .diff-footer {
+    padding: 10px 14px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    background: #fffbeb;
+    font-size: 11px;
+  }
+  .diff-footer .reason {
+    flex: 1;
+    color: var(--ink2);
+  }
+  .diff-copy {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--border);
+    background: #fff;
+    padding: 4px 10px;
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--ink);
+  }
+  .diff-copy:hover { background: #fef3c7; }
+  .diff-copy.done  { background: #d1fae5; color: #065f46; }
+
   /* ── Memory table ── */
   .memory-grid {
     display: grid;
@@ -313,6 +412,14 @@
 
   <!-- Stats strip -->
   <div class="stats-grid" id="stats-grid">
+    <div class="stat-card hero">
+      <span class="label">Accept Rate</span>
+      <span class="value" id="stat-accept">—</span>
+      <span class="sub">
+        <span id="stat-feedback">no feedback yet</span>
+        <span class="trend-pill flat" id="stat-trend" hidden>—</span>
+      </span>
+    </div>
     <div class="stat-card accent">
       <span class="label">Total Prompts</span>
       <span class="value" id="stat-total">—</span>
@@ -327,11 +434,6 @@
       <span class="label">Avg Score</span>
       <span class="value" id="stat-score">—</span>
       <span class="sub">threshold: 38</span>
-    </div>
-    <div class="stat-card green">
-      <span class="label">Accept Rate</span>
-      <span class="value" id="stat-accept">—</span>
-      <span class="sub" id="stat-feedback">no feedback yet</span>
     </div>
   </div>
 
@@ -444,7 +546,36 @@
       d.accept_rate !== null
         ? `${d.kept} kept / ${d.rejected} rejected`
         : 'no feedback yet';
+    await updateAcceptTrend();
     return d;
+  }
+
+  // ── Accept-rate trend ──────────────────────────────────────────────────────
+  // Compares the last 20 rated prompts against the 20 before that.
+  // No new endpoint — pulls from /api/history (already cached on the page).
+
+  async function updateAcceptTrend() {
+    const pill = document.getElementById('stat-trend');
+    try {
+      const r = await fetch(`${API}/api/history?limit=200&intercepted_only=true`);
+      const events = await r.json();
+      const rated = events.filter(e => e.user_kept === 0 || e.user_kept === 1);
+      if (rated.length < 4) { pill.hidden = true; return; }
+      const window = Math.min(20, Math.floor(rated.length / 2));
+      const recent = rated.slice(0, window);
+      const prior  = rated.slice(window, window * 2);
+      const rate = arr => arr.length ? Math.round(arr.filter(e => e.user_kept === 1).length / arr.length * 100) : null;
+      const recentRate = rate(recent);
+      const priorRate  = rate(prior);
+      if (recentRate === null || priorRate === null) { pill.hidden = true; return; }
+      const delta = recentRate - priorRate;
+      pill.hidden = false;
+      pill.className = `trend-pill ${delta > 0 ? 'up' : delta < 0 ? 'down' : 'flat'}`;
+      const arrow = delta > 0 ? '▲' : delta < 0 ? '▼' : '→';
+      pill.textContent = `${arrow} ${Math.abs(delta)} pt vs prior ${window}`;
+    } catch (_) {
+      pill.hidden = true;
+    }
   }
 
   // ── Route chart ────────────────────────────────────────────────────────────
@@ -560,19 +691,67 @@
       return;
     }
 
-    tbody.innerHTML = events.map(e => {
+    tbody.innerHTML = events.map((e, i) => {
       const route = e.route || 'enrich';
       const intercepted = e.was_intercepted;
-      return `
-        <tr>
+      const expandable = intercepted && e.optimized_prompt && e.optimized_prompt !== e.original_prompt;
+      const escapeAttr = s => (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const reason = e.reason || '';
+      const summaryRow = `
+        <tr class="${expandable ? 'expandable' : ''}" data-idx="${i}">
           <td style="color:var(--ink2)">${relTime(e.timestamp)}</td>
           <td>${e.classifier_score}</td>
           <td>${badge(route, route)}</td>
           <td>${intercepted ? badge('yes', 'yes') : badge('no', 'no')}</td>
-          <td title="${(e.original_prompt || '').replace(/"/g, '&quot;')}">${trunc(e.original_prompt, 80)}</td>
+          <td title="${escapeAttr(e.original_prompt)}">${trunc(e.original_prompt, 80)}</td>
         </tr>
       `;
+      if (!expandable) return summaryRow;
+      const diffRow = `
+        <tr class="diff-row" data-diff-for="${i}" hidden>
+          <td colspan="5">
+            <div class="diff-wrap">
+              <div class="diff-col original"><span class="label">Original</span>${escapeAttr(e.original_prompt)}</div>
+              <div class="diff-col optimized"><span class="label">Optimized</span>${escapeAttr(e.optimized_prompt)}</div>
+            </div>
+            <div class="diff-footer">
+              <span class="reason">${reason ? `<strong>Reason:</strong> ${escapeAttr(reason)}` : '<em>no reason recorded</em>'}</span>
+              <button class="diff-copy" data-copy-idx="${i}">Copy optimized</button>
+            </div>
+          </td>
+        </tr>
+      `;
+      return summaryRow + diffRow;
     }).join('');
+
+    // Row toggle: clicking an expandable summary row reveals its diff row.
+    tbody.querySelectorAll('tr.expandable').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const idx = tr.getAttribute('data-idx');
+        const diffTr = tbody.querySelector(`tr.diff-row[data-diff-for="${idx}"]`);
+        if (!diffTr) return;
+        const willOpen = diffTr.hasAttribute('hidden');
+        if (willOpen) { diffTr.removeAttribute('hidden'); tr.classList.add('open'); }
+        else          { diffTr.setAttribute('hidden', '');  tr.classList.remove('open'); }
+      });
+    });
+
+    // Copy-optimized button per diff row.
+    tbody.querySelectorAll('button.diff-copy').forEach(btn => {
+      btn.addEventListener('click', async ev => {
+        ev.stopPropagation();
+        const idx = btn.getAttribute('data-copy-idx');
+        const text = events[idx]?.optimized_prompt || '';
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'Copied ✓';
+          btn.classList.add('done');
+          setTimeout(() => { btn.textContent = 'Copy optimized'; btn.classList.remove('done'); }, 1500);
+        } catch (_) {
+          btn.textContent = 'Copy failed';
+        }
+      });
+    });
   }
 
   // ── Memory ─────────────────────────────────────────────────────────────────
