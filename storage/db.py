@@ -77,6 +77,30 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             source_count INTEGER
         )
     """)
+    # NW2 migration: add project_id so stack_memory is scoped per repo. Older
+    # installs have a UNIQUE(key) constraint that prevents per-project rows for
+    # the same key, so we rebuild the table once (preserving rows as 'global').
+    try:
+        conn.execute("SELECT project_id FROM stack_memory LIMIT 1")
+    except sqlite3.OperationalError:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS stack_memory__new (
+                id           TEXT PRIMARY KEY,
+                updated_at   TEXT,
+                key          TEXT NOT NULL,
+                value        TEXT,
+                confidence   REAL,
+                source_count INTEGER,
+                project_id   TEXT NOT NULL DEFAULT 'global',
+                UNIQUE(key, project_id)
+            );
+            INSERT INTO stack_memory__new(id, updated_at, key, value, confidence, source_count, project_id)
+            SELECT id, updated_at, key, value, confidence, source_count, 'global'
+            FROM stack_memory;
+            DROP TABLE stack_memory;
+            ALTER TABLE stack_memory__new RENAME TO stack_memory;
+        """)
+        conn.commit()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
             session_id   TEXT PRIMARY KEY,
@@ -268,20 +292,24 @@ def _coerce_row(row: dict) -> dict:
 
 # ── Stack memory ──────────────────────────────────────────────────────────────
 
-def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
-    """Upsert a stack memory entry with compounding confidence.
+def upsert_stack_memory(key: str, value: str, confidence: float, project_id: str = "global") -> None:
+    """Upsert a stack memory entry with compounding confidence, scoped to a project.
 
     - First occurrence: store confidence as-is.
     - Same key + same value again: new_confidence = min(0.99, existing + 0.02)
     - Same key + different value: reset confidence to 0.6, reset source_count to 1.
+
+    ``project_id`` defaults to ``"global"`` for legacy callers; pass a normalized
+    git remote URL to scope memory per-repo (NW2).
     """
     conn = _get_connection()
     with _write_lock:
         conn.execute("BEGIN IMMEDIATE")
         try:
             existing = conn.execute(
-                "SELECT id, value, confidence, source_count FROM stack_memory WHERE key = ?",
-                [key],
+                "SELECT id, value, confidence, source_count FROM stack_memory "
+                "WHERE key = ? AND project_id = ?",
+                [key, project_id],
             ).fetchone()
 
             if existing:
@@ -301,27 +329,41 @@ def upsert_stack_memory(key: str, value: str, confidence: float) -> None:
                     """, [_now(), value, entry_id])
             else:
                 conn.execute("""
-                    INSERT INTO stack_memory (id, updated_at, key, value, confidence, source_count)
-                    VALUES (?, ?, ?, ?, ?, 1)
-                """, [str(uuid.uuid4()), _now(), key, value, confidence])
+                    INSERT INTO stack_memory (id, updated_at, key, value, confidence, source_count, project_id)
+                    VALUES (?, ?, ?, ?, ?, 1, ?)
+                """, [str(uuid.uuid4()), _now(), key, value, confidence, project_id])
             conn.commit()
         except Exception:
             conn.rollback()
             raise
 
 
-def get_stack_memory_with_confidence() -> list[dict]:
-    """Return all stack memory entries with confidence. Uses a fresh read connection."""
+def get_stack_memory_with_confidence(project_id: str | None = None) -> list[dict]:
+    """Return stack memory entries with confidence. Uses a fresh read connection.
+
+    ``project_id`` filter:
+      - ``None`` (default): return all projects (backwards compatible).
+      - ``"global"``: return only the cross-project memory.
+      - ``"<repo-id>"``: return memory for that repo only.
+    """
     conn = get_read_connection()
     try:
-        rows = conn.execute("""
-            SELECT key, value, confidence, source_count, updated_at
-            FROM stack_memory
-            ORDER BY confidence DESC
-        """).fetchall()
+        if project_id is None:
+            rows = conn.execute("""
+                SELECT key, value, confidence, source_count, updated_at, project_id
+                FROM stack_memory
+                ORDER BY confidence DESC
+            """).fetchall()
+        else:
+            rows = conn.execute("""
+                SELECT key, value, confidence, source_count, updated_at, project_id
+                FROM stack_memory
+                WHERE project_id = ?
+                ORDER BY confidence DESC
+            """, [project_id]).fetchall()
     finally:
         conn.close()
-    cols = ["key", "value", "confidence", "source_count", "updated_at"]
+    cols = ["key", "value", "confidence", "source_count", "updated_at", "project_id"]
     result = []
     for row in rows:
         d = dict(zip(cols, row))
@@ -352,15 +394,36 @@ def get_route_stats() -> dict:
         conn.close()
 
 
-def get_stack_memory() -> dict[str, str]:
-    """Return {key: value} for all entries with confidence >= 0.6."""
+def get_stack_memory(project_id: str = "global") -> dict[str, str]:
+    """Return {key: value} for entries scoped to ``project_id`` with confidence ≥ 0.6.
+
+    Defaults to ``"global"`` so existing callers (the optimizer) keep working
+    until NW2 is wired through. To get cross-project memory pass an empty
+    string or list_projects() and merge upstream.
+    """
     conn = _get_connection()
     rows = conn.execute("""
         SELECT key, value FROM stack_memory
-        WHERE confidence >= 0.6
+        WHERE confidence >= 0.6 AND project_id = ?
         ORDER BY confidence DESC
-    """).fetchall()
+    """, [project_id]).fetchall()
     return {row[0]: row[1] for row in rows}
+
+
+def list_projects() -> list[dict]:
+    """Return one row per project_id with entry counts, newest activity first."""
+    conn = get_read_connection()
+    try:
+        rows = conn.execute("""
+            SELECT project_id, COUNT(*) AS n_entries, MAX(updated_at) AS latest
+            FROM stack_memory
+            GROUP BY project_id
+            ORDER BY latest DESC NULLS LAST
+        """).fetchall()
+    finally:
+        conn.close()
+    return [{"project_id": p, "n_entries": n, "latest": latest}
+            for p, n, latest in rows]
 
 
 def get_full_stack_memory() -> list[dict]:
@@ -568,7 +631,11 @@ def flush_pending_hook_events() -> dict:
                     raise
             sidecar_path.unlink()
             flushed += 1
-            prompts.append({"prompt": data["original_prompt"], "history": []})
+            prompts.append({
+                "prompt": data["original_prompt"],
+                "history": [],
+                "project_id": data.get("project_id", "global"),
+            })
         except Exception:
             logger.warning("failed to flush sidecar %s", sidecar_path.name, exc_info=True)
             try:

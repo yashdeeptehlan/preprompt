@@ -399,6 +399,16 @@
     font-size: 11px;
     font-family: var(--mono);
   }
+
+  .project-filter {
+    font-family: var(--mono);
+    font-size: 11px;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 3px;
+    padding: 3px 6px;
+    max-width: 220px;
+  }
 </style>
 </head>
 <body>
@@ -498,7 +508,12 @@
   <div class="panel">
     <div class="panel-header">
       <span class="panel-title">Stack Memory</span>
-      <span id="memory-count" style="font-size:11px;color:var(--ink2);">—</span>
+      <span style="display:flex;align-items:center;gap:12px;">
+        <select id="project-filter" class="project-filter" title="Filter by project">
+          <option value="">All projects</option>
+        </select>
+        <span id="memory-count" style="font-size:11px;color:var(--ink2);">—</span>
+      </span>
     </div>
     <div id="memory-body" class="panel-body" style="padding:0;">
       <div class="empty-state">Loading…</div>
@@ -756,25 +771,49 @@
 
   // ── Memory ─────────────────────────────────────────────────────────────────
 
+  async function loadProjectFilter() {
+    try {
+      const r = await fetch(`${API}/api/projects`);
+      const projects = await r.json();
+      const sel = document.getElementById('project-filter');
+      const current = sel.value;
+      // Keep the leading "All projects" option and rebuild the rest.
+      sel.innerHTML = '<option value="">All projects</option>'
+        + projects.map(p => {
+            const label = `${p.project_id} (${p.n_entries})`;
+            return `<option value="${(p.project_id || '').replace(/"/g, '&quot;')}">${label}</option>`;
+          }).join('');
+      // Preserve user's selection across reloads.
+      sel.value = current;
+    } catch (_) { /* no-op: dropdown will retain "All projects" */ }
+  }
+
   async function loadMemory() {
-    const r = await fetch(`${API}/api/memory`);
+    const selectedProject = document.getElementById('project-filter').value;
+    const qs = selectedProject ? `?project=${encodeURIComponent(selectedProject)}` : '';
+    const r = await fetch(`${API}/api/memory${qs}`);
     const entries = await r.json();
     const bodyEl = document.getElementById('memory-body');
     const countEl = document.getElementById('memory-count');
 
     if (!entries.length) {
       countEl.textContent = '0 entries';
-      bodyEl.innerHTML = `<div class="empty-state">No stack memory yet.<div class="hint">Send a few prompts mentioning your tech stack to build it.</div></div>`;
+      const hint = selectedProject
+        ? `No stack memory for <code>${selectedProject}</code> yet.`
+        : 'No stack memory yet. Send a few prompts mentioning your tech stack to build it.';
+      bodyEl.innerHTML = `<div class="empty-state">${hint}</div>`;
       return;
     }
 
     countEl.textContent = `${entries.length} entries`;
+    const showProjectCol = !selectedProject;
     bodyEl.innerHTML = `
       <table class="history-table">
         <thead>
           <tr>
-            <th style="width:120px">Key</th>
-            <th style="width:140px">Value</th>
+            <th style="width:110px">Key</th>
+            <th style="width:130px">Value</th>
+            ${showProjectCol ? '<th>Project</th>' : ''}
             <th>Confidence</th>
             <th style="width:60px">Seen</th>
           </tr>
@@ -784,6 +823,7 @@
             <tr>
               <td style="color:var(--ink2)">${m.key}</td>
               <td>${m.value}</td>
+              ${showProjectCol ? `<td style="color:var(--ink2);font-size:10px">${m.project_id || 'global'}</td>` : ''}
               <td>
                 <div style="display:flex;align-items:center;gap:8px;">
                   <div class="conf-bar"><div class="conf-fill" style="width:${Math.round(m.confidence*100)}%"></div></div>
@@ -816,7 +856,7 @@
     document.getElementById('refresh-info').textContent = 'Refreshing…';
     try {
       const stats = await loadStats();
-      await Promise.all([loadRoutes(), loadFeedback(stats), loadHistory(), loadMemory()]);
+      await Promise.all([loadRoutes(), loadFeedback(stats), loadHistory(), loadProjectFilter(), loadMemory()]);
     } catch (e) {
       document.getElementById('refresh-info').textContent = 'Error — retrying…';
     }
@@ -824,6 +864,7 @@
   }
 
   document.getElementById('intercepted-only').addEventListener('change', loadHistory);
+  document.getElementById('project-filter').addEventListener('change', loadMemory);
 
   refreshAll().then(() => {
     if (timer) clearInterval(timer);

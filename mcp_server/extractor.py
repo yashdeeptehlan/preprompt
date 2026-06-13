@@ -101,10 +101,14 @@ def extract_stack_signals(prompt: str, history: list) -> dict[str, str]:
     return signals
 
 
-def update_memory_from_prompt(prompt: str, history: list) -> None:
-    """Extract stack signals and upsert each into stack_memory."""
+def update_memory_from_prompt(prompt: str, history: list, project_id: str = "global") -> None:
+    """Extract stack signals and upsert each into stack_memory, scoped to ``project_id``.
+
+    Default ``"global"`` preserves pre-NW2 behaviour for callers that haven't
+    yet been updated to pass a project identifier.
+    """
     signals = extract_stack_signals(prompt, history)
     strong_signals = {"language", "framework"}
     for key, value in signals.items():
         confidence = 0.85 if key in strong_signals else 0.80
-        upsert_stack_memory(key, value, confidence=confidence)
+        upsert_stack_memory(key, value, confidence=confidence, project_id=project_id)
