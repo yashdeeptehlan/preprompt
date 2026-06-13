@@ -1,0 +1,87 @@
+---
+title: Getting started
+description: Install PrePrompt and run your first optimization in under five minutes.
+---
+
+## Install
+
+```bash
+pip install preprompt
+preprompt-install
+```
+
+`preprompt-install` auto-detects Claude Code, Cursor, Windsurf, and Zed and registers the hook in each. You'll see a checkmark next to every IDE it finds.
+
+## Add your Anthropic key
+
+PrePrompt's classifier runs locally, but the optimizer uses Anthropic's Haiku model. Create `~/.preprompt/.env`:
+
+```bash
+mkdir -p ~/.preprompt
+echo 'ANTHROPIC_API_KEY=sk-ant-...' > ~/.preprompt/.env
+chmod 600 ~/.preprompt/.env
+```
+
+The key never leaves your machine — calls go directly from the hook to `api.anthropic.com`.
+
+## Restart your IDE
+
+Close and reopen Claude Code (or whichever IDE you use). The hook is registered globally, so it picks up on the next launch.
+
+## Try it
+
+Type a deliberately vague prompt:
+
+```
+make the login flow faster
+```
+
+You'll see an annotation box like this above your normal reply:
+
+```
+╔═ PrePrompt +42 ════════════════════════════════════════════╗
+║ added concrete latency target and acceptance criteria      ║
+╠════════════════════════════════════════════════════════════╣
+║ ORIGINAL  make the login flow faster                       ║
+║ OPTIMIZED Profile the existing login flow, identify the    ║
+║           hottest call site, and reduce p95 latency to     ║
+║           under 200ms while preserving session behavior.   ║
+╠════════════════════════════════════════════════════════════╣
+║ Keep enrichment: preprompt-rate keep                       ║
+║ Use original:    preprompt-rate revert                     ║
+╚════════════════════════════════════════════════════════════╝
+```
+
+The AI receives the optimized version, not your original.
+
+## Useful commands
+
+```bash
+preprompt-dashboard      # local web UI at http://localhost:7777
+preprompt-stats          # one-shot terminal summary
+preprompt-history        # paginated history of every prompt
+preprompt-watch          # live tail of activity
+preprompt-rate keep      # mark the last enrichment as good
+preprompt-rate revert    # mark it bad + print the original back
+preprompt-revert         # just print the original (no rating)
+```
+
+## Where data lives
+
+| Path | Contents |
+|------|----------|
+| `~/.preprompt/.env` | Your `ANTHROPIC_API_KEY` |
+| `~/.preprompt/history.db` | SQLite log of every prompt + the optimizer's rewrite |
+| `~/.preprompt/last_original.txt` | Last pre-optimization prompt (for `preprompt-revert`) |
+| `~/.preprompt/pending/` | Sidecar files written by the hook, drained by the MCP server |
+| `~/.preprompt/activity.log` | Plain-text activity for `preprompt-watch` |
+
+All files are `chmod 600` — owner-readable only.
+
+## Uninstall
+
+```bash
+pip uninstall preprompt
+```
+
+Re-run your IDE; the hook fails open (passthrough) the first time it can't find the package, then disappears from the chain.

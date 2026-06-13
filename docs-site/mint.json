@@ -1,0 +1,66 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "PrePrompt",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg",
+    "href": "https://preprompt.org"
+  },
+  "favicon": "/favicon.png",
+  "colors": {
+    "primary": "#b87f1f",
+    "light": "#d4a04a",
+    "dark": "#8a5e16",
+    "background": {
+      "light": "#fdf8ef",
+      "dark": "#171410"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Site",
+      "url": "https://preprompt.org"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Install",
+    "url": "https://preprompt.org/#install"
+  },
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/Preprompt-ai/preprompt"
+    },
+    {
+      "name": "Status",
+      "icon": "chart-line",
+      "url": "https://preprompt.org/#stats"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get started",
+      "pages": [
+        "introduction",
+        "getting-started"
+      ]
+    },
+    {
+      "group": "How it works",
+      "pages": [
+        "classifier",
+        "privacy"
+      ]
+    },
+    {
+      "group": "Reference",
+      "pages": [
+        "faq"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/Preprompt-ai/preprompt"
+  }
+}

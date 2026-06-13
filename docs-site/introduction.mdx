@@ -1,0 +1,26 @@
+---
+title: What PrePrompt is
+description: A locally-running hook that rewrites vague prompts before your AI tool sees them.
+---
+
+PrePrompt is a small program that runs on your machine and intercepts every prompt you send through Claude Code, Cursor, Windsurf, or Zed. If the prompt is too short or too vague to get a good answer, PrePrompt rewrites it — adds the missing context, acceptance criteria, and stack details — before the AI sees it.
+
+You write `"make it faster"`. The AI sees `"profile the existing implementation, identify the hottest call site, and apply caching or batching to bring p95 latency under 50ms without changing the public contract."`
+
+It runs as a hook plus an MCP server. There is no cloud round-trip for the classifier: a 200-line scorer decides whether a prompt needs rewriting in sub-millisecond time, and only forwards the rewrite to Anthropic's Haiku model when needed.
+
+## Why it exists
+
+The single biggest cause of mediocre AI output is mediocre input. Most developers know this but don't have time to write a paragraph-long prompt every turn. PrePrompt does the discipline for you, silently, and only when it matters.
+
+## What it is not
+
+- Not a wrapper around a different model.
+- Not a tracking server. The classifier is local; only enrichment calls Anthropic, and only with your key.
+- Not a productivity dashboard for your boss. The dashboard is for you.
+
+## Next
+
+- [Install and run your first optimization](/getting-started)
+- [Understand the classifier](/classifier)
+- [Privacy: what leaves your machine](/privacy)
