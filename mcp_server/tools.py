@@ -19,6 +19,29 @@ mcp = FastMCP("PrePrompt")
 _SESSION_ID = get_or_create_session()
 
 
+def _current_project_id() -> str:
+    """Return normalized git-remote identifier for the MCP server's cwd, or 'global'."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=1.0,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return "global"
+        url = result.stdout.strip()
+        if url.startswith("git@"):
+            url = url.replace("git@", "", 1).replace(":", "/", 1)
+        for prefix in ("https://", "http://", "ssh://"):
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+        if url.endswith(".git"):
+            url = url[:-4]
+        return url[:200] or "global"
+    except Exception:
+        return "global"
+
+
 def _emit_tools_event(event: str, properties: dict) -> None:
     """Fire a PostHog event from the MCP tool path. No-op if POSTHOG_API_KEY is unset."""
     try:
@@ -142,7 +165,7 @@ def optimize_prompt(
             "reason": f"Possible secrets detected ({', '.join(secrets)}). Prompt passed through without optimization.",
         }
 
-    result = optimize(user_prompt, conversation_history)
+    result = optimize(user_prompt, conversation_history, project_id=_current_project_id())
     optimized = result["optimized_prompt"]
     was_intercepted = optimized != user_prompt
     save_prompt_event(

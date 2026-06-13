@@ -91,7 +91,7 @@ Respond ONLY with valid JSON. No markdown fences, no extra commentary.\
 """
 
 
-def optimize(prompt: str, history: list, timeout: float = 8.0) -> dict:
+def optimize(prompt: str, history: list, timeout: float = 8.0, project_id: str = "global") -> dict:
     """Rewrite *prompt* using conversation *history* and learned stack context.
 
     Always returns a dict with keys: optimized_prompt, reason, changes_made.
@@ -110,7 +110,7 @@ def optimize(prompt: str, history: list, timeout: float = 8.0) -> dict:
 
     # ── Inject learned stack memory into the system prompt ────────────────────
     try:
-        stack_memory = get_stack_memory()
+        stack_memory = get_stack_memory(project_id=project_id)
     except Exception:
         stack_memory = {}
 
