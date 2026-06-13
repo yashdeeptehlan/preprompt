@@ -124,8 +124,10 @@ def _render_annotation(score: int, reason: str, original: str, optimized: str) -
     opt_lines = [_box_line(f"OPTIMIZED {opt_wrapped[0]}")] + [
         _box_line(f"          {line}") for line in opt_wrapped[1:]
     ]
+    keep_line   = _box_line("Keep enrichment: preprompt-rate keep")
+    revert_line = _box_line("Use original:    preprompt-rate revert")
     footer = "╚" + "═" * (_WIDTH - 2) + "╝"
-    return "\n".join([header] + reason_lines + [sep, orig_line] + opt_lines + [footer])
+    return "\n".join([header] + reason_lines + [sep, orig_line] + opt_lines + [sep, keep_line, revert_line, footer])
 
 
 def _render_clarify_annotation(score: int, question: str, original: str) -> str:
@@ -147,6 +149,55 @@ def _chmod_user_only(path: Path) -> None:
     try:
         os.chmod(path, 0o600)
     except (OSError, NotImplementedError):
+        pass
+
+
+def _emit_event(event: str, properties: dict) -> None:
+    """Fire a PostHog event from the hook. No-op if POSTHOG_API_KEY is unset."""
+    try:
+        from backend.analytics import track_event
+        track_event(event, properties)
+    except Exception:
+        pass
+
+
+def _maybe_emit_onboarding(was_intercepted: bool) -> None:
+    """Print a one-time welcome message the first time PrePrompt processes a prompt."""
+    flag = Path.home() / ".preprompt" / ".onboarded"
+    if flag.exists():
+        return
+    try:
+        flag.parent.mkdir(parents=True, exist_ok=True)
+        flag.touch()
+        _chmod_user_only(flag)
+    except Exception:
+        return
+    if was_intercepted:
+        print(
+            "\n[PrePrompt] First optimization complete.\n"
+            "  Original preserved at: ~/.preprompt/last_original.txt\n"
+            "  Run preprompt-revert to restore original anytime.\n"
+            "  Run preprompt-stats to see your optimization history.\n"
+            "  Run preprompt-history to see all processed prompts.\n",
+            file=sys.stderr,
+        )
+    else:
+        print(
+            "\n[PrePrompt] Running. Your prompt scored below threshold — passed through.\n"
+            "  Run preprompt-test-classifier to see how prompts are scored.\n"
+            "  Run preprompt-stats to track your usage over time.\n",
+            file=sys.stderr,
+        )
+
+
+def _save_last_original(prompt: str) -> None:
+    """Write the pre-optimization prompt to a fixed path so preprompt-revert can read it."""
+    orig_file = Path.home() / ".preprompt" / "last_original.txt"
+    try:
+        orig_file.parent.mkdir(parents=True, exist_ok=True)
+        orig_file.write_text(prompt)
+        _chmod_user_only(orig_file)
+    except Exception:
         pass
 
 
@@ -222,6 +273,11 @@ def main() -> None:
         score = routing["quality_score"]
 
         if route == "pass":
+            _maybe_emit_onboarding(was_intercepted=False)
+            _emit_event("prompt_processed", {
+                "route": "pass", "score": score, "was_intercepted": False,
+                "prompt_length": len(prompt),
+            })
             passthrough()
             sys.exit(0)
 
@@ -248,6 +304,10 @@ def main() -> None:
             except Exception as log_err:
                 print(f"[PrePrompt] Activity log write failed: {log_err}", file=sys.stderr)
 
+            _emit_event("prompt_processed", {
+                "route": "clarify", "score": score, "was_intercepted": False,
+                "prompt_length": len(prompt),
+            })
             print(json.dumps({"prompt": clarified_prompt}))
             sys.exit(0)
 
@@ -269,6 +329,11 @@ def main() -> None:
                 f"Prompt will not be sent to optimization model.",
                 file=sys.stderr,
             )
+            _emit_event("secret_detected", {"count": len(detected_secrets)})
+            _emit_event("prompt_processed", {
+                "route": "secret_blocked", "score": score, "was_intercepted": False,
+                "prompt_length": len(prompt),
+            })
             print(json.dumps({"prompt": prompt}))
             sys.exit(0)
 
@@ -285,6 +350,7 @@ def main() -> None:
             print(f"[PrePrompt] Sidecar write failed: {sidecar_err}", file=sys.stderr)
 
         if was_intercepted:
+            _save_last_original(prompt)
             print(_render_annotation(score, reason, prompt, optimized), file=sys.stderr)
         else:
             print(f"[PrePrompt +{score}] {reason}", file=sys.stderr)
@@ -293,6 +359,13 @@ def main() -> None:
             _log_activity(score, was_intercepted, prompt, optimized, reason)
         except Exception as log_err:
             print(f"[PrePrompt] Activity log write failed: {log_err}", file=sys.stderr)
+
+        _maybe_emit_onboarding(was_intercepted)
+
+        _emit_event("prompt_processed", {
+            "route": "enrich", "score": score, "was_intercepted": was_intercepted,
+            "prompt_length": len(prompt), "optimized_length": len(optimized),
+        })
 
         print(json.dumps({"prompt": optimized}))
 
