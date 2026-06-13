@@ -48,3 +48,24 @@ def identify(user_id: str, properties: dict) -> None:
             ph.identify(distinct_id=user_id, properties=properties)
     except Exception:
         logger.warning("posthog identify failed for user=%s", user_id, exc_info=True)
+
+
+def flush() -> None:
+    """Force-send queued events. Required in short-lived processes (CLI, hook)."""
+    try:
+        ph = _get_posthog()
+        if ph and ph.api_key:
+            ph.flush()
+    except Exception:
+        logger.warning("posthog flush failed", exc_info=True)
+
+
+def track_event(event: str, properties: Optional[dict] = None, user_id: Optional[str] = None) -> None:
+    """Best-effort fire-and-flush. Safe to call from short-lived processes.
+
+    No-ops if POSTHOG_API_KEY is unset, so callers don't need to guard.
+    """
+    if not os.environ.get("POSTHOG_API_KEY", "").strip():
+        return
+    track(event, user_id, properties or {})
+    flush()

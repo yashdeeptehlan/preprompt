@@ -24,6 +24,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
+    "posthog>=3.0.0",
 ]
 
 [project.urls]
@@ -56,6 +57,8 @@ preprompt-install            = "cli.commands:install_cmd"
 preprompt-update             = "cli.commands:update_cmd"
 preprompt-update-context     = "cli.commands:update_context_cmd"
 preprompt-dashboard          = "cli.commands:dashboard_cmd"
+preprompt-revert             = "cli.commands:revert_cmd"
+preprompt-rate               = "cli.commands:rate_cmd"
 
 [tool.hatch.build.targets.wheel]
 packages = ["mcp_server", "storage", "cli", "dashboard"]

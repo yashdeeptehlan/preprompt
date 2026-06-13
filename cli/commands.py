@@ -610,6 +610,12 @@ def install_cmd() -> None:
     print("  Watch live: preprompt-watch")
     print()
 
+    try:
+        from backend.analytics import track_event
+        track_event("install_completed", {"source": "preprompt-install"})
+    except Exception:
+        pass
+
 
 # ── preprompt-update ─────────────────────────────────────────────────────────
 
@@ -690,6 +696,64 @@ def dashboard_cmd() -> None:
 
 
 # ── preprompt-update-context ─────────────────────────────────────────────────
+
+def revert_cmd() -> None:
+    """Print the last pre-optimization prompt to stdout."""
+    orig_file = Path.home() / ".preprompt" / "last_original.txt"
+    if orig_file.exists():
+        print(orig_file.read_text(), end="")
+    else:
+        print("No previous original prompt found.", file=sys.stderr)
+        sys.exit(1)
+
+
+def rate_cmd() -> None:
+    """preprompt-rate keep|revert — record feedback on the last intercepted prompt.
+
+    `keep`   marks the last intercepted prompt as accepted (user_kept = 1).
+    `revert` marks it rejected (user_kept = 0) AND prints the original prompt
+             from ~/.preprompt/last_original.txt so the user can resubmit it.
+    """
+    parser = argparse.ArgumentParser(prog="preprompt-rate")
+    parser.add_argument("action", choices=["keep", "revert"])
+    args = parser.parse_args()
+
+    kept = (args.action == "keep")
+    try:
+        from storage.db import rate_last_intercepted
+        updated = rate_last_intercepted(kept=kept)
+    except Exception as e:
+        print(f"Could not record feedback: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not updated:
+        print("No recent intercepted prompt found to rate.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        from backend.analytics import track_event
+        track_event(
+            "enrichment_accepted" if kept else "enrichment_rejected",
+            {"source": "preprompt-rate"},
+        )
+    except Exception:
+        pass
+
+    if kept:
+        print("Recorded: kept.")
+        return
+
+    print("Recorded: reverted.")
+    orig_file = Path.home() / ".preprompt" / "last_original.txt"
+    if orig_file.exists():
+        print()
+        print("--- Original prompt ---")
+        print(orig_file.read_text(), end="")
+        print()
+        print("--- end ---")
+    else:
+        print("(no saved original found)", file=sys.stderr)
+
 
 def update_context_cmd() -> None:
     """Regenerate CONTEXT.md with current phase, test count, and file map."""

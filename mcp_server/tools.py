@@ -19,6 +19,15 @@ mcp = FastMCP("PrePrompt")
 _SESSION_ID = get_or_create_session()
 
 
+def _emit_tools_event(event: str, properties: dict) -> None:
+    """Fire a PostHog event from the MCP tool path. No-op if POSTHOG_API_KEY is unset."""
+    try:
+        from backend.analytics import track_event
+        track_event(event, properties, user_id=_SESSION_ID)
+    except Exception:
+        pass
+
+
 @mcp.tool()
 def optimize_prompt(
     user_prompt: str,
@@ -66,6 +75,10 @@ def optimize_prompt(
             route="clarify",
         )
         update_memory_from_prompt(user_prompt, conversation_history)
+        _emit_tools_event("prompt_processed", {
+            "route": "clarify", "score": score, "was_intercepted": False,
+            "prompt_length": len(user_prompt), "source": "mcp",
+        })
         return {
             "optimized_prompt": user_prompt,
             "was_intercepted": False,
@@ -86,6 +99,10 @@ def optimize_prompt(
             route="pass",
         )
         update_memory_from_prompt(user_prompt, conversation_history)
+        _emit_tools_event("prompt_processed", {
+            "route": "pass", "score": score, "was_intercepted": False,
+            "prompt_length": len(user_prompt), "source": "mcp",
+        })
         return {
             "optimized_prompt": user_prompt,
             "was_intercepted": False,
@@ -107,6 +124,12 @@ def optimize_prompt(
             session_id=_SESSION_ID,
             route="pass",
         )
+        _emit_tools_event("secret_detected", {"count": len(secrets)})
+        _emit_tools_event("prompt_processed", {
+            "route": "secret_blocked", "score": score,
+            "was_intercepted": False, "prompt_length": len(user_prompt),
+            "source": "mcp",
+        })
         return {
             "optimized_prompt": user_prompt,
             "was_intercepted": False,
@@ -128,6 +151,11 @@ def optimize_prompt(
         route="enrich",
     )
     update_memory_from_prompt(user_prompt, conversation_history)
+    _emit_tools_event("prompt_processed", {
+        "route": "enrich", "score": score, "was_intercepted": was_intercepted,
+        "prompt_length": len(user_prompt), "optimized_length": len(optimized),
+        "source": "mcp",
+    })
     return {
         "optimized_prompt": optimized,
         "was_intercepted": was_intercepted,

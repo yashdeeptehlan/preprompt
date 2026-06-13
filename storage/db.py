@@ -402,6 +402,35 @@ def record_user_feedback(event_id: str, kept: bool) -> None:
             raise
 
 
+def rate_last_intercepted(kept: bool) -> bool:
+    """Mark the most recent intercepted-but-unrated prompt as kept (True) or rejected (False).
+
+    Returns True if a row was updated, False if no eligible row was found.
+    """
+    conn = _get_connection()
+    with _write_lock:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute("""
+                SELECT id FROM prompt_history
+                WHERE was_intercepted = 1 AND user_kept IS NULL
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """).fetchone()
+            if row is None:
+                conn.rollback()
+                return False
+            conn.execute(
+                "UPDATE prompt_history SET user_kept = ? WHERE id = ?",
+                [1 if kept else 0, row[0]],
+            )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            raise
+
+
 def get_feedback_stats() -> dict:
     """Return accept/reject stats for intercepted prompts."""
     conn = get_read_connection()
