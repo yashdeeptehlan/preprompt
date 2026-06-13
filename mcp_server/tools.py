@@ -56,7 +56,11 @@ def optimize_prompt(
     flush_result = flush_pending_hook_events()
     for item in flush_result.get("prompts", []):
         try:
-            update_memory_from_prompt(item["prompt"], item.get("history", []))
+            update_memory_from_prompt(
+                item["prompt"],
+                item.get("history", []),
+                project_id=item.get("project_id", "global"),
+            )
         except Exception:
             pass
     routing = route_prompt(user_prompt, conversation_history, turn_number)

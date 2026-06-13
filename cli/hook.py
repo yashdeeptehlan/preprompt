@@ -222,7 +222,42 @@ def _log_activity(score: int, was_intercepted: bool, original: str, optimized: s
         _chmod_user_only(log_path)
 
 
-def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: bool, turn_number: int, route: str = "enrich") -> None:
+def _detect_project() -> str:
+    """Return a normalized git-remote identifier for the current working directory.
+
+    The identifier is the origin URL stripped of scheme + ``.git`` suffix:
+    ``git@github.com:Preprompt-ai/preprompt.git`` → ``github.com/Preprompt-ai/preprompt``
+    ``https://github.com/Preprompt-ai/preprompt`` → ``github.com/Preprompt-ai/preprompt``
+
+    Falls back to ``"global"`` if not inside a git repo or git isn't available —
+    so cross-repo / non-repo work still accumulates in a shared bucket and
+    doesn't get lost.
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=1.0,
+        )
+        if result.returncode != 0:
+            return "global"
+        url = result.stdout.strip()
+        if not url:
+            return "global"
+        # Normalize ssh + https → host/owner/repo
+        if url.startswith("git@"):
+            url = url.replace("git@", "", 1).replace(":", "/", 1)
+        for prefix in ("https://", "http://", "ssh://"):
+            if url.startswith(prefix):
+                url = url[len(prefix):]
+        if url.endswith(".git"):
+            url = url[:-4]
+        return url or "global"
+    except Exception:
+        return "global"
+
+
+def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: bool, turn_number: int, route: str = "enrich", project_id: str = "global") -> None:
     sidecar = {
         "original_prompt": prompt,
         "optimized_prompt": optimized,
@@ -231,6 +266,7 @@ def _write_sidecar(prompt: str, optimized: str, score: int, was_intercepted: boo
         "turn_number": turn_number,
         "timestamp": time.time(),
         "route": route,
+        "project_id": project_id,
     }
     sidecar_dir = Path.home() / ".preprompt" / "pending"
     sidecar_dir.mkdir(parents=True, exist_ok=True)
@@ -294,7 +330,7 @@ def main() -> None:
             )
 
             try:
-                _write_sidecar(prompt, prompt, score, False, turn, route="clarify")
+                _write_sidecar(prompt, prompt, score, False, turn, route="clarify", project_id=_detect_project())
             except Exception as sidecar_err:
                 print(f"[PrePrompt] Sidecar write failed (clarify): {sidecar_err}",
                       file=sys.stderr)
@@ -345,7 +381,7 @@ def main() -> None:
         was_intercepted: bool = optimized != prompt
 
         try:
-            _write_sidecar(prompt, optimized, score, was_intercepted, turn, route="enrich")
+            _write_sidecar(prompt, optimized, score, was_intercepted, turn, route="enrich", project_id=_detect_project())
         except Exception as sidecar_err:
             print(f"[PrePrompt] Sidecar write failed: {sidecar_err}", file=sys.stderr)
 

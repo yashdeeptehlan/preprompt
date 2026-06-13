@@ -71,9 +71,9 @@ The forensic audit calls these the switching-cost moats. Build after P0 ships an
 
 | Done | Item | Est | Owner | Files |
 |------|------|-----|-------|-------|
-| [ ] | **NW2 — Project profiles** (git-repo-keyed memory, schema migration) | 8h | Y (schema), V (CLI detection) | `storage/db.py`, `mcp_server/extractor.py`, `cli/hook.py`, `mcp_server/optimizer.py` |
-| [ ] | **Project-aware optimizer context injection** | 2h | Y | `mcp_server/optimizer.py` |
-| [ ] | **Dashboard: select project filter** | 2h | V | `dashboard/static/index.html` |
+| [x] | **NW2 — Project profiles** (V-side: schema, sidecar plumbing, extractor, detection) | 8h | V (done), Y (optimizer wiring) | `storage/db.py`, `mcp_server/extractor.py`, `cli/hook.py`, `mcp_server/tools.py` |
+| [!] | **Project-aware optimizer context injection** (off-limits for V) | 2h | Y | `mcp_server/optimizer.py` line 113 — change `get_stack_memory()` → `get_stack_memory(project_id=<from caller>)`. tools.py already accepts and stores project_id; just needs threading through `optimize()` call. |
+| [x] | **Dashboard: select project filter** | 2h | V | `dashboard/static/index.html`, `dashboard/server.py` |
 
 **Subtotal P3: 12 hours.**
 

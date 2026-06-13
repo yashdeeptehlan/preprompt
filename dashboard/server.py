@@ -143,8 +143,16 @@ async def routes(request: Request) -> JSONResponse:
 async def memory(request: Request) -> JSONResponse:
     _require_auth(request)
     from storage.db import get_stack_memory_with_confidence
-    entries = get_stack_memory_with_confidence()
+    project = request.query_params.get("project") or None
+    entries = get_stack_memory_with_confidence(project_id=project)
     return JSONResponse(_jsonify(entries))
+
+
+@app.get("/api/projects")
+async def projects(request: Request) -> JSONResponse:
+    _require_auth(request)
+    from storage.db import list_projects
+    return JSONResponse(_jsonify(list_projects()))
 
 
 _TOKEN_BOOTSTRAP = """
