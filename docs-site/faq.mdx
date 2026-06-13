@@ -1,0 +1,55 @@
+---
+title: FAQ
+description: Common questions about PrePrompt.
+---
+
+## Does PrePrompt slow down my IDE?
+
+The classifier runs in sub-millisecond time — you won't feel it. The optimizer has a hard 2-second timeout; if Haiku doesn't return by then, the hook passes your original prompt through. In practice the rewrite completes in 300–800ms.
+
+## What happens if my Anthropic key isn't set?
+
+The hook prints a one-line warning to stderr and passes the prompt through unchanged. PrePrompt fails open — your IDE still works, you just don't get optimization.
+
+## Can it rewrite my prompt in a way I don't want?
+
+In theory yes; in practice the optimizer has nine validators that reject bad rewrites. The strongest is a 4× length cap: if the rewrite is more than four times the original, it's discarded. The next strongest is an intent-preservation check that compares the rewrite's semantic shape to the original.
+
+If you ever get a rewrite you don't want: run `preprompt-rate revert`. It marks the rewrite as rejected (useful for our metrics) and prints your original prompt back so you can resend it.
+
+## Does it work with non-Anthropic models?
+
+The hook is model-agnostic: it sits between your IDE and whatever LLM your IDE is configured to call. Claude Code and Cursor with Sonnet/Opus get the same treatment. The *optimizer* itself uses Anthropic's Haiku, but that's a separate API call from whatever the IDE is doing.
+
+## Why not a VS Code extension?
+
+Coming. The VS Code Copilot Chat API exposes the hooks we need; the extension is the #1 distribution priority on our build plan.
+
+## Can I see what was rewritten?
+
+Three ways: the annotation box in your IDE (default), the dashboard's history panel with a click-to-expand diff view, and `preprompt-history` in the terminal.
+
+## Is the source open?
+
+Yes — Apache 2.0. <https://github.com/Preprompt-ai/preprompt>
+
+## Does it work on Windows?
+
+The CLI and MCP server run on Windows via WSL. Native Windows support is on the roadmap but not shipped.
+
+## What if I want to disable it temporarily?
+
+Comment out the `UserPromptSubmit` entry in `~/.claude/settings.json` (or your IDE's equivalent) and restart. The hook is just a config line — removing it has no side effects.
+
+## How do I uninstall completely?
+
+```bash
+pip uninstall preprompt
+rm -rf ~/.preprompt
+```
+
+Then remove the hook entry from `~/.claude/settings.json` (or run `preprompt-install --uninstall` once it ships).
+
+## Where do I report a bug?
+
+GitHub Issues: <https://github.com/Preprompt-ai/preprompt/issues>. Please include `preprompt-stats` output and the relevant lines from `~/.preprompt/activity.log`.

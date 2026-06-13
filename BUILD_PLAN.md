@@ -85,12 +85,12 @@ Pre-launch table stakes. Without these, HN comments destroy you in the first hou
 
 | Done | Item | Est | Owner | Files |
 |------|------|-----|-------|-------|
-| [ ] | **Mintlify docs site at `docs.preprompt.org`** (scaffold + DNS) | 3h | V | new `/docs-site/` |
-| [ ] | **Getting started** (5-min install → first optimization) | 2h | V | `/docs-site/getting-started.mdx` |
-| [ ] | **How the classifier works** (with examples) | 2h | V | `/docs-site/classifier.mdx` |
-| [ ] | **Privacy page** (what leaves your machine, what doesn't) | 1h | V | `/docs-site/privacy.mdx`, `docs/index.html` link |
-| [ ] | **FAQ — top 10 questions** | 1h | V | `/docs-site/faq.mdx` |
-| [ ] | **Privacy policy + Terms of Service** (lawyer-free templates, link from footer) | 2h | V | `docs/privacy.html`, `docs/terms.html` |
+| [~] | **Mintlify docs site at `docs.preprompt.org`** (scaffold ✓; DNS pending) | 3h | V | new `/docs-site/` (mint.json + 5 MDX pages) |
+| [x] | **Getting started** (5-min install → first optimization) | 2h | V | `/docs-site/getting-started.mdx` |
+| [x] | **How the classifier works** (with examples) | 2h | V | `/docs-site/classifier.mdx` |
+| [x] | **Privacy page** (what leaves your machine, what doesn't) | 1h | V | `/docs-site/privacy.mdx`, `docs/index.html` link |
+| [x] | **FAQ — top 10 questions** | 1h | V | `/docs-site/faq.mdx` |
+| [x] | **Privacy policy + Terms of Service** (lawyer-free templates, link from footer) | 2h | V | `docs/privacy.html`, `docs/terms.html` |
 
 **Subtotal P4: 11 hours.**
 

@@ -1,0 +1,46 @@
+---
+title: Privacy
+description: Exactly what leaves your machine, exactly what stays.
+---
+
+PrePrompt is designed so that your prompts never reach a server we control. This page is a precise account of every byte that crosses the network.
+
+## What stays on your machine
+
+- Every prompt you send. Stored in `~/.preprompt/history.db` (SQLite, `chmod 600`).
+- The optimizer's rewrites (same place).
+- Your `ANTHROPIC_API_KEY` (in `~/.preprompt/.env`, `chmod 600`).
+- The activity log (`~/.preprompt/activity.log`).
+- Stack memory (language, framework, database signals — extracted locally by regex, not sent anywhere).
+- The classifier's scoring (pure heuristic, no network calls).
+- All dashboard data — the dashboard server binds to `127.0.0.1` and requires a token printed at startup. It does not accept connections from other machines.
+
+## What leaves your machine
+
+Only one thing: when the classifier decides to rewrite a prompt, PrePrompt sends that prompt to Anthropic's Haiku model at `api.anthropic.com`. The request goes directly from your hook to Anthropic over HTTPS using your own API key. It does not pass through any server we operate.
+
+That request contains:
+
+- Your prompt's full text (so the optimizer can rewrite it).
+- The recent conversation history (so the rewrite stays on-topic).
+- Our system prompt (`mcp_server/optimizer.py`).
+
+Subject to [Anthropic's data policy](https://www.anthropic.com/legal/privacy). Briefly: API traffic is not used for model training.
+
+## Secret scanning
+
+Before the hook sends any prompt to the optimizer, it runs a regex scanner for API keys, JWT tokens, AWS keys, GitHub tokens, and a dozen other patterns. If a match is found, the hook **does not** send the prompt to Anthropic — it returns the original prompt and writes `[SECRET DETECTED - NOT LOGGED]` to history instead of the actual content. The scanner is in `mcp_server/secret_scanner.py` if you want to review it.
+
+## Telemetry
+
+PrePrompt can emit a small set of metadata events to PostHog: `prompt_processed`, `enrichment_accepted`, `enrichment_rejected`, `install_completed`, `secret_detected`. Events never include prompt text — only a route, a length, and a score.
+
+Telemetry is **off by default**. It activates only when `POSTHOG_API_KEY` is set in your environment. The hook reads the environment once; if the variable is absent, no PostHog code paths execute.
+
+## Hosted Pro tier (when it ships)
+
+When the paid tier launches, the hosted optimizer endpoint will receive your prompt in place of direct calls to Anthropic. That endpoint is operated by us. It will be documented with its own privacy section before it's released. The OSS tier (this one) will continue to call Anthropic directly with your own key.
+
+## Auditing
+
+Everything described here is in the public repo. The classifier, the secret scanner, the analytics wrapper, and the hook itself are all under 500 lines each. If something on this page doesn't match the code, the code is wrong — file an issue.

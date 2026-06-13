@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy — PrePrompt</title>
+<meta name="description" content="How PrePrompt handles your data." />
+<link rel="canonical" href="https://preprompt.org/privacy.html" />
+<style>
+  :root { color-scheme: light; }
+  body {
+    font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #fdf8ef;
+    color: #1a1614;
+    margin: 0;
+    line-height: 1.6;
+  }
+  main { max-width: 720px; margin: 0 auto; padding: 64px 24px 96px; }
+  h1 { font-size: 32px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 32px 0 8px; letter-spacing: -0.005em; }
+  p, li { font-size: 15px; }
+  ul { padding-left: 22px; }
+  code { background: #f0e7d4; padding: 1px 6px; border-radius: 3px; font-size: 13px; }
+  a { color: #b87f1f; }
+  .meta { color: #6b5a4a; font-size: 13px; margin-bottom: 32px; }
+  nav { padding: 16px 24px; border-bottom: 1px solid #e6dac3; }
+  nav a { color: #1a1614; text-decoration: none; font-weight: 600; }
+</style>
+</head>
+<body>
+<nav><a href="/">← preprompt.org</a></nav>
+<main>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Last updated: 13 June 2026</p>
+
+  <p>This page describes how PrePrompt (the open-source tool at <a href="https://github.com/Preprompt-ai/preprompt">github.com/Preprompt-ai/preprompt</a>) and the preprompt.org website handle your data. It is plain-English and aims to be accurate, not exhaustive. If anything here disagrees with the code in the public repository, treat the code as authoritative and please open an issue.</p>
+
+  <h2>1. PrePrompt on your machine</h2>
+  <p>PrePrompt is software that runs on your computer. It stores the prompts it processes, the rewrites it produces, your Anthropic API key, and accumulated technology-stack signals in <code>~/.preprompt/</code> on your local disk. These files are restricted to your user account (<code>chmod 600</code>). They are not transmitted to any server we operate.</p>
+
+  <h2>2. Calls to Anthropic</h2>
+  <p>When the classifier decides a prompt needs rewriting, PrePrompt sends that prompt — and recent conversation history — directly to Anthropic's API using your own API key. We do not see, log, or proxy this traffic. Anthropic's handling is governed by their <a href="https://www.anthropic.com/legal/privacy">privacy policy</a>.</p>
+
+  <h2>3. Telemetry (off by default)</h2>
+  <p>PrePrompt can optionally send a small set of metadata events to PostHog — currently <code>prompt_processed</code>, <code>enrichment_accepted</code>, <code>enrichment_rejected</code>, <code>install_completed</code>, and <code>secret_detected</code>. These events never include prompt text. They contain only a route label (<code>pass</code> / <code>enrich</code> / <code>clarify</code>), a length, a score, and (for the <code>secret_detected</code> event) a count.</p>
+  <p>Telemetry is disabled unless you set <code>POSTHOG_API_KEY</code> in your environment. We will never enable telemetry without action on your part.</p>
+
+  <h2>4. Secret scanning</h2>
+  <p>Before any prompt is sent to the Anthropic API, PrePrompt's secret scanner inspects it for patterns that look like API keys, JWT tokens, AWS keys, GitHub tokens, and similar credentials. If a match is found, the prompt is <strong>not</strong> sent to Anthropic, and the placeholder <code>[SECRET DETECTED - NOT LOGGED]</code> is written to local history in place of the real content.</p>
+
+  <h2>5. The preprompt.org website</h2>
+  <p>This website is a static page hosted on a CDN. It does not require an account to browse. The "live stats" widget displays aggregate counts only. We use Plausible-style privacy-respecting analytics (no cookies, no personal identifiers).</p>
+
+  <h2>6. The hosted Pro tier</h2>
+  <p>The hosted optimizer (when launched) will receive prompts on our servers in place of direct calls to Anthropic. We will publish a separate, more detailed privacy notice for that service before launch — including retention periods, the regions in which data is processed, and the sub-processors we use. Until that notice exists, the hosted tier is not available.</p>
+
+  <h2>7. Children</h2>
+  <p>PrePrompt is not directed at children under 13. We do not knowingly collect data from anyone under 13.</p>
+
+  <h2>8. Your rights</h2>
+  <p>Everything PrePrompt knows about you lives in <code>~/.preprompt/</code> on your own machine. Delete that directory and you've deleted everything. For any data the website processes, write to <a href="mailto:privacy@preprompt.org">privacy@preprompt.org</a> and we'll respond within 30 days.</p>
+
+  <h2>9. Changes</h2>
+  <p>If we change this policy, we will update the date above and surface a note in the next release's changelog. Material changes will be announced on the website and the GitHub repository.</p>
+
+  <h2>10. Contact</h2>
+  <p><a href="mailto:privacy@preprompt.org">privacy@preprompt.org</a></p>
+
+  <p style="margin-top:48px;color:#6b5a4a;font-size:13px;">This is a plain-English summary, not legal advice. The OSS tool's behaviour is fully described in the source repository.</p>
+</main>
+</body>
+</html>

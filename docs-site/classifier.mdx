@@ -1,0 +1,80 @@
+---
+title: How the classifier works
+description: 200 lines of regex decide whether your prompt needs rewriting. No model, no cloud, sub-millisecond.
+---
+
+Every prompt PrePrompt sees is scored 0–100 by a pure-heuristic classifier. The score gates everything that happens afterward.
+
+## The three routes
+
+| Score | Route | What happens |
+|-------|-------|--------------|
+| ≥ 38 | `pass` | The prompt is good enough. Send unchanged. |
+| < 38, has enough context | `enrich` | Call Haiku to rewrite. Show the diff in an annotation box. |
+| < 38, missing essential context | `clarify` | Wrap the prompt with an instruction to ask the user a question first. |
+
+The 38 threshold isn't sacred — it was calibrated against a corpus of real prompts where 38 was the highest score that still routinely produced mediocre AI output. You can change it; nothing else cares.
+
+## What the scorer looks for
+
+It rewards prompts that show effort:
+
+- **Length and structure** — multi-sentence, numbered lists, paragraphs.
+- **Concrete artifacts** — file paths, function names, error messages, line numbers.
+- **Acceptance criteria** — "must handle X", "should return Y", "without breaking Z".
+- **Constraints** — performance targets, security requirements, compatibility.
+- **Stack signal** — language, framework, library names anywhere in the conversation.
+
+It penalizes prompts that look like a shrug:
+
+- One- or two-word verbs (`fix this`, `make it work`, `improve`).
+- Pronouns without referents on turn 1 (`fix it`, `update this`).
+- Vague qualifiers (`better`, `cleaner`, `more elegant`) with no metric.
+
+You can see exactly how your own prompts score:
+
+```bash
+preprompt-test-classifier
+```
+
+That runs a benchmark of six representative prompts and prints the scores.
+
+## Why heuristics, not a model
+
+Three reasons.
+
+**Latency.** The hook runs synchronously on every prompt. A model classifier adds 100–500ms of round-trip latency to every IDE submit. Regex is microseconds.
+
+**Cost.** A model classifier turns "free per-prompt overhead" into "$0.0001 per prompt × a lot of prompts."
+
+**Predictability.** Heuristic rules are auditable. You can read `classifier.py` and know exactly why your prompt scored what it did. A model classifier would drift between fine-tunes and you'd never know why a prompt suddenly started getting rewritten.
+
+## What the optimizer does
+
+If the prompt routes to `enrich`, PrePrompt sends it to Anthropic's Haiku model with a tight system prompt: rewrite the prompt to fix the gaps, preserve the user's intent, never add scope, never change the question being asked.
+
+There are nine validators around the rewrite — including a hard length cap (output cannot exceed 4× the input), an intent-preservation check, and a similarity floor. If any validator rejects the rewrite, PrePrompt uses the original. You'll see a `score=X passthrough` line in `activity.log` when this happens.
+
+That's intentional. A wrong rewrite is worse than no rewrite. The optimizer fails toward safety.
+
+## Stack memory
+
+While prompts flow through, an extractor scans for technology signals (language, framework, database, style) and stores them in `~/.preprompt/history.db`. The optimizer then injects this context into future rewrites, so a Python project gets Python-flavored enrichments and not generic ones.
+
+Stack memory is scoped per git repository — your TypeScript project's memory doesn't leak into a Python project. View it with `preprompt-memory` or in the dashboard's Stack Memory panel.
+
+## Reading the activity log
+
+```bash
+preprompt-watch
+```
+
+Each line:
+
+```
+[12:42:18] score=22 intercepted | refactor this to be cleaner
+[12:42:34] score=71 passthrough | implement a token bucket rate limiter…
+```
+
+- `intercepted` = the optimizer rewrote it.
+- `passthrough` = either the classifier scored it ≥ 38 or the optimizer's validator rejected the rewrite.
