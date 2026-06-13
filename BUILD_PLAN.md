@@ -38,11 +38,11 @@ You can't gate on retention if no one is reading the dashboard. These items make
 
 | Done | Item | Est | Owner | Files |
 |------|------|-----|-------|-------|
-| [ ] | **NW1 — Before/after diff view in dashboard** (expandable rows) | 3h | V | `dashboard/static/index.html` only |
-| [ ] | **Accept rate prominently on dashboard** (big number + trend) | 1h | V | `dashboard/static/index.html`, `storage/db.py` (query exists) |
-| [ ] | **`preprompt-stats` redesign** (route ratios, accept rate, top intercepted patterns) | 2h | V | `cli/commands.py` |
-| [ ] | **Weekly metrics email script** (Mon morning summary to both founders) | 2h | V | new `scripts/weekly_metrics.py` |
-| [ ] | **D30 retention SQL query in `storage/db.py`** | 2h | V | `storage/db.py` |
+| [x] | **NW1 — Before/after diff view in dashboard** (expandable rows) | 3h | V | `dashboard/static/index.html` only |
+| [x] | **Accept rate prominently on dashboard** (big number + trend) | 1h | V | `dashboard/static/index.html`, `storage/db.py` (query exists) |
+| [x] | **`preprompt-stats` redesign** (route ratios, accept rate, top intercepted patterns) | 2h | V | `cli/commands.py` |
+| [x] | **Weekly metrics email script** (Mon morning summary to both founders) | 2h | V | new `scripts/weekly_metrics.py` |
+| [x] | **D30 retention SQL query in `storage/db.py`** | 2h | V | `storage/db.py` |
 
 **Subtotal P1: 10 hours.**
 
